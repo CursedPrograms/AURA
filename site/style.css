@@ -191,3 +191,10 @@ section.eco .eco-title { font: 600 11px ui-monospace, Consolas, monospace; lette
   color: #8b949e; margin-bottom: 10px; }
 section.eco strong { color: #8b949e; }
 section.eco a { color: #58a6ff; text-decoration: none; }
+
+/* the rest of the family, each with its avatar */
+.related { display: flex; flex-wrap: wrap; gap: 10px; }
+.related a { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; background: var(--panel);
+             border: 1px solid var(--border); border-radius: 999px; color: var(--text); }
+.related a:hover { border-color: var(--accent); text-decoration: none; }
+.related img { width: 40px; height: 40px; border-radius: 50%; }

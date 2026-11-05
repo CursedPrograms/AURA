@@ -1279,6 +1279,19 @@ def api_europe():
         return jsonify({"error": f"Open-Meteo didn't answer ({type(e).__name__})."}), 502
 
 
+@app.route("/robot-avatar/<name>")
+def robot_avatar(name):
+    """A robot's round avatar from its repo beside hers (images/avatar_round.png), for her room cards."""
+    key = re.sub(r"[^A-Z0-9]", "", name.upper())
+    repo = ROBOT_REPOS.get(key)
+    if key == NAME:
+        return send_from_directory(os.path.join(HERE, "images"), "avatar_round.png", max_age=86400)
+    folder = os.path.join(HERE, "..", repo, "images") if repo else None
+    if not folder or not os.path.isfile(os.path.join(folder, "avatar_round.png")):
+        return "", 404
+    return send_from_directory(folder, "avatar_round.png", max_age=86400)
+
+
 @app.route("/avatar.jpg")
 def avatar():
     return send_from_directory(os.path.join(HERE, "images"), "aura_avatar.jpg", max_age=86400)

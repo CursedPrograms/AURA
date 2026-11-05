@@ -126,8 +126,11 @@ async function refreshNow() {
       const el = document.createElement('div');
       el.className = 'room' + (Date.now() / 1000 - r.ts > 300 ? ' stale' : '');
       el.style.setProperty('--c', colour(n));
-      el.innerHTML = '<div class="who"></div><div class="t"></div><div class="h"></div><div class="via"></div>';
-      el.querySelector('.who').textContent = n === 'AURA' ? 'AURA (here)' : n;
+      el.innerHTML = '<div class="who"><img alt=""><span></span></div><div class="t"></div><div class="h"></div><div class="via"></div>';
+      const face = el.querySelector('.who img');
+      face.src = `/robot-avatar/${encodeURIComponent(n)}`;
+      face.onerror = () => face.remove();          // a robot without an avatar beside her: just the name
+      el.querySelector('.who span').textContent = n === 'AURA' ? 'AURA (here)' : n;
       el.querySelector('.t').textContent = `${deg(r.temp)}${unit()}`;
       el.querySelector('.h').textContent = `${pct(r.hum)} humidity`;
       el.querySelector('.via').textContent = `${ago(r.ts)} · ${r.via}`;
