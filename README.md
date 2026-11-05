@@ -54,6 +54,10 @@ The fleet's weather station. AURA knows what it's like outside, what it's like i
   - **Rain and snow in detail:** rain, showers, snowfall, snow depth, today's total and hours of rain, and the freezing level.
   - **Sun:** sunshine today, daylight and how much longer or shorter it is than yesterday, solar radiation, and UV under a clear sky.
   - **Ground:** soil temperature (surface and 6 cm) and moisture, evaporation, and how much water plants lose today (ET₀).
+- **The coast** (`/coast` on her page): the nearest sea, found by herself (she looks right where you are first, then in rings of points 50 km apart until the marine model has real sea: a temperature, a tide and waves), or a coastal city you set in `Coast`. Tides (high and low, and a 48-hour chart: the modelled sea level, not for navigation), sea temperature, waves, swell and wind waves (height, period, direction), the ocean current, and a quick read of the surf. The nearest town comes from OpenStreetMap, once, and is remembered in `data/coast.json`. Ask her: "when is high tide?", "how's the surf?"
+- **Her own rain guess:** she starts from Open-Meteo's chance for the next few hours and moves it with what she senses: humidity rising (or falling) across every sensor in the fleet, air close to its dew point, the barometer falling fast, storm energy. Each sensor is averaged in, so the more of them report, the steadier it is and the surer she is (low, medium or high confidence). Indoor sensors only follow the outside air slowly, so they nudge her guess rather than make it. Ask her: "will it rain?"
+- **Every robot in its own colour:** on the graph, each robot's line is the accent from its own `colour_scheme.xml` (NORA yellow, MILA cyan, KIDA-01 pink...), and its readings are saved with the rest.
+- **Which city:** her page has a dropdown of cities. It starts at your internet connection's city, and picking another one shows that city's weather, but the graph's outside line always stays home. **Save as my location** makes a city home: it's written to `location.json` (gitignored, and only there once you've saved one). **Use my connection's city** goes back.
 - **Europe** (`/europe` on her page): what Open-Meteo only has for Europe: six pollens (alder, birch, grass, mugwort, olive, ragweed) now and over the next 24 hours, ammonia, and the lightning potential for the next 12 hours (central Europe), with the European air quality index and its parts. Outside Europe it says so, and you can look at any European city.
 - **What's coming:** the next 6 hours, hour by hour: when rain looks likely (60 % or more, or it's in the forecast) and when a thunderstorm is forecast. **Air:** air quality (US AQI, PM2.5) and pollen from Open-Meteo's free air-quality service, every 30 minutes (pollen is only measured in Europe). DREAM uses all of this to mention the weather now and then, the way a person would.
 - **The sky:** sunrise, sunset and the UV index (Open-Meteo), and the moon's phase, worked out on the PC (no internet needed): how lit it is and the days to the next full moon.
@@ -83,7 +87,9 @@ She finds her Arduino by herself: the port that answers `WHO` with `I am AURA`.
 |---|---|---|
 | `Port` | `5017` | Her page and API |
 | `RiftHost`, `RiftPort` | `127.0.0.1`, `5000` | Where RIFT's fleet list is: she registers there and reads the robots from it |
-| `Location` | empty | `Latitude` + `Longitude` (and a `Name`), or a `City` that Open-Meteo looks up. Empty: a guess from your network's public address |
+| `Location` | empty | `Latitude` + `Longitude` (and a `Name`), or a `City` that Open-Meteo looks up. Empty: your internet connection's city. A city saved on her page (`location.json`) comes first |
+| `Coast` | empty | A coastal city for the coast page. Empty: the nearest coast to her location |
+| `Cities` | ten cities | The dropdown on her page (a city typed under "Another city..." is remembered by that browser) |
 | `Units` | `C` | `C` or `F` |
 | `WeatherMinutes` | `10` | How often she asks Open-Meteo |
 | `FleetSeconds` | `60` | How often she asks the robots |

@@ -8,7 +8,10 @@ let hours = 24;
 let series = {};
 const colourOf = {};
 
+let robotColours = {};            // each robot's own accent (its colour_scheme.xml), from /api/now
+
 function colour(name) {
+  if (robotColours[name]) return robotColours[name];
   if (name === 'Outside') return OUTSIDE;
   if (!colourOf[name]) colourOf[name] = COLOURS[Object.keys(colourOf).length % COLOURS.length];
   return colourOf[name];
@@ -23,10 +26,71 @@ function ago(ts) {
   return s < 90 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
 }
 
+/* The city dropdown: home (saved, or your connection's city) first. Picking another city shows its weather;
+   the graph's outside line always stays home. "Save as my location" makes it home (location.json). */
+let viewing = '';
+let homeSaved = false;
+const CUSTOM_KEY = 'aura.cities';
+
+async function loadCities() {
+  let d;
+  try { d = await (await fetch('/api/cities')).json(); } catch { return; }
+  homeSaved = d.saved;
+  let custom = [];
+  try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch { /* none */ }
+  const pick = $('city-pick');
+  const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
+  pick.replaceChildren(opt('', `${d.home} (${d.saved ? 'saved' : "my connection's city"})`),
+    ...[...custom, ...d.cities].filter((c, i, all) => all.indexOf(c) === i).map(c => opt(c, c)),
+    opt('*other', 'Another city...'));
+  pick.value = viewing;
+  showCityButtons();
+}
+
+function showCityButtons() {
+  $('save-city').hidden = !viewing;
+  $('forget-city').hidden = !!viewing || !homeSaved;
+  $('city-note').textContent = viewing ? 'Just looking: the graph stays at home.' : '';
+}
+
+$('city-pick').addEventListener('change', async e => {
+  let city = e.target.value;
+  if (city === '*other') {
+    city = (prompt('Which city?') || '').trim();
+    if (!city) { e.target.value = viewing; return; }
+    let custom = [];
+    try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch { /* none */ }
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify([city, ...custom.filter(c => c !== city)].slice(0, 12)));
+  }
+  viewing = city;
+  await loadCities();
+  refreshNow();
+});
+
+$('save-city').addEventListener('click', async () => {
+  const r = await fetch('/api/location', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                           body: JSON.stringify({ city: viewing }) });
+  const d = await r.json();
+  if (!r.ok) { $('city-note').textContent = d.error; return; }
+  viewing = '';
+  $('city-note').textContent = `Saved: ${d.home} is home now.`;
+  await loadCities();
+  setTimeout(refreshNow, 2500);
+});
+
+$('forget-city').addEventListener('click', async () => {
+  await fetch('/api/location', { method: 'DELETE' });
+  await loadCities();
+  setTimeout(refreshNow, 2500);
+});
+
 async function refreshNow() {
   let d;
-  try { d = await (await fetch('/api/now')).json(); } catch { return; }
+  try { d = await (await fetch('/api/now' + (viewing ? `?city=${encodeURIComponent(viewing)}` : ''))).json(); } catch { return; }
+  if (d.error) { $('city-note').textContent = d.error; return; }
   units = d.units || 'C';
+  if (d.colours) robotColours = d.colours;
+  showOutlook(d.rain_outlook);
   $('says').textContent = d.says;
   if (d.location) $('where').textContent = d.location.name || '';
   const o = d.outside;
@@ -100,6 +164,17 @@ function showDetails(o) {
     div.querySelectorAll('dd')[1].textContent = note;
     return div;
   }));
+}
+
+// Her own rain forecast: Open-Meteo, nudged by every sensor in the fleet and the barometer
+function showOutlook(o) {
+  const box = $('outlook');
+  if (!o) { box.hidden = true; return; }
+  box.hidden = false;
+  $('outlook-chance').textContent = `${o.chance}%`;
+  $('outlook-conf').textContent = `${o.confidence} confidence · ${o.sensors} sensor${o.sensors === 1 ? '' : 's'}` +
+    (o.sensor_names && o.sensor_names.length ? ` (${o.sensor_names.join(', ')})` : '');
+  $('outlook-why').textContent = (o.reasons || []).join(' · ');
 }
 
 async function refreshHistory() {
@@ -188,6 +263,7 @@ $('story-btn').addEventListener('click', async () => {
 });
 
 colour('AURA');
+loadCities();
 refreshNow();
 refreshHistory();
 setInterval(refreshNow, 15000);

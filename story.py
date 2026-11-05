@@ -18,6 +18,9 @@ import struct
 import sys
 from pathlib import Path
 
+import re
+import time
+
 import numpy as np
 
 MODELS = Path(__file__).resolve().parent / "models"
@@ -211,15 +214,30 @@ def tell(opening, steps=180, seed=None):
     return text
 
 
-def weather_story(words, feel, moon=None, steps=180, seed=None):
-    """AURA's kind of story: always about the weather. words: "light rain"; feel: "warm" / "cold" / "nice"."""
+FIRST = re.compile(r"\b(I|I'm|I'd|I've|I'll|me|my|myself|mine)\b")
+SLIPS = re.compile(r"\b(she|her|herself|he|him|his)\b", re.I)   # the story drifting to someone else
+NAME_SLIPS = re.compile(r"\b(\w*laura|aura)\b", re.I)    # the model doesn't know "Aura": it drifts to "A Laura"
+
+
+def first_person_score(text):
+    """How well a story stays hers: "I" and "my" up, "she" down, a drifting name way down."""
+    return len(FIRST.findall(text)) - 2 * len(SLIPS.findall(text)) - 6 * len(NAME_SLIPS.findall(text))
+
+
+def weather_story(words, feel, moon=None, steps=130, seed=None, drafts=4):
+    """AURA's kind of story, told by her, in the first person, always about the weather. words:
+    "light rain"; feel: "warm" / "cold" / "nice". TinyStories learned mostly third-person stories,
+    so she writes a few drafts and keeps the one that stays most "I"."""
     sky = {"clear": "the sun was shining", "mostly clear": "the sun was shining", "partly cloudy": "big white clouds floated by",
            "overcast": "the sky was grey", "foggy": "fog covered everything"}.get(words, f"there was {words}")
-    opening = (f"Once upon a time, there was a girl named Aura who loved the weather more than anything. "
-               f"Every morning she looked at the sky. Today {sky} and it was {feel}.")
+    opening = (f"I love the weather more than anything. Every morning I look up at the sky. "
+               f"Today {sky} and it was {feel}.")
     if moon:
-        opening += f" That night there would be a {moon} moon."
-    return tell(opening, steps=steps, seed=seed)
+        opening += f" Tonight there would be a {moon} moon."
+    opening += " I went outside and"
+    base = seed if seed is not None else int(time.time())
+    stories = [tell(opening, steps=steps, seed=base + i) for i in range(drafts)]
+    return max(stories, key=lambda t: first_person_score(t[len(opening):]))
 
 
 GRIM = (" dead", " died", " die ", " dies", " killed", " kill ", " buried", " funeral")

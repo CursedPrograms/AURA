@@ -8,3 +8,4 @@ data/
 !builds/
 !builds/*.exe
 models/
+location.json

@@ -11,13 +11,23 @@
 </head>
 <body>
 <header>
-  <div class="brand"><img class="face" src="/static/avatar_round.png" alt="" width="40" height="40">{{ name }}</div>
-  <nav class="links"><a href="/europe">Europe</a></nav>
+  <div class="brand"><img class="face" src="/static/avatar_round.png" alt="AURA" width="64" height="64">{{ name }}</div>
+  <nav class="links"><a href="/coast">Coast</a><a href="/europe">Europe</a></nav>
   <div class="where" id="where">finding where I am...</div>
 </header>
 
 <main>
-  <p class="says" id="says">I'm still gathering the weather. Give me a minute.</p>
+  <div class="speech">
+    <img class="portrait" src="/avatar.jpg" alt="AURA" width="96" height="96">
+    <p class="says" id="says">I'm still gathering the weather. Give me a minute.</p>
+  </div>
+
+  <div class="citybar">
+    <select id="city-pick" aria-label="City"></select>
+    <button id="save-city" hidden>Save as my location</button>
+    <button id="forget-city" hidden>Use my connection's city</button>
+    <span class="muted small" id="city-note"></span>
+  </div>
 
   <section class="outside" id="outside">
     <div class="big"><span id="out-temp">--</span><span class="unit" id="out-unit">°</span></div>
@@ -36,6 +46,15 @@
     </dl>
   </section>
 
+  <section class="outlook" id="outlook" hidden>
+    <div class="outlook-chance" id="outlook-chance">--</div>
+    <div>
+      <div class="outlook-title">Rain in the next few hours, AURA's own guess</div>
+      <div class="muted small" id="outlook-conf"></div>
+      <div class="small" id="outlook-why"></div>
+    </div>
+  </section>
+
   <section>
     <h2>The details</h2>
     <dl class="details" id="details"><div><dt>Waiting</dt><dd>for Open-Meteo</dd></div></dl>
@@ -51,7 +70,7 @@
     </div>
     <div class="story">
       <button id="story-btn">Tell me a weather story</button>
-      <p class="muted" id="story">She makes one up from today's sky (NINA's little storyteller, about 10 s).</p>
+      <p class="muted" id="story">She makes one up from today's sky (NINA's little storyteller, about 20 s).</p>
     </div>
   </section>
 

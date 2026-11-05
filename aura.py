@@ -20,7 +20,7 @@ import time
 from collections import defaultdict, deque
 
 import requests
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 import fleet_bt
 from fleet_ladder import FleetLadder
@@ -29,7 +29,7 @@ NAME = "AURA"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 HISTORY_CSV = os.path.join(DATA, "history.csv")
-LOCATION_JSON = os.path.join(DATA, "location.json")
+SAVED_LOCATION = os.path.join(HERE, "location.json")   # only once a city is saved on her page (gitignored)
 
 DEFAULTS = {
     "Port": 5017,
@@ -43,6 +43,8 @@ DEFAULTS = {
     "BoardBaud": 9600,
     "HistoryDays": 7,
     "SampleSeconds": 60,
+    "Coast": "",
+    "Cities": ["London", "New York", "Tokyo", "Sydney", "Cape Town", "Berlin", "Paris", "Los Angeles", "Dubai", "Rio de Janeiro"],
     "Bluetooth": {},
     "BluetoothServer": True,
     "FleetLadder": False,
@@ -180,7 +182,7 @@ class History:
 HISTORY = History(HISTORY_CSV, CFG["HistoryDays"], CFG["SampleSeconds"])
 NOW = {}                          # source -> {"temp", "hum", "ts", "via"}
 NOW_LOCK = threading.Lock()
-STATE = {"weather": None, "air": None, "weather_error": None, "location": None, "board": None, "board_error": None,
+STATE = {"weather": None, "air": None, "marine": None, "coast": None, "weather_error": None, "location": None, "board": None, "board_error": None,
          "registered": False, "fleet_error": None}
 
 
@@ -193,46 +195,77 @@ def note_reading(source, temp, hum, via):
 
 
 # ── Where she is ───────────────────────────────────────────────────────────────────────────────
-def resolve_location(cfg=CFG, get=requests.get):
-    """Latitude/Longitude from config.json, else its City (Open-Meteo's geocoding), else a guess
-    from this network's public address. Remembered in data/location.json."""
+def resolve_location(cfg=CFG, get=requests.get, saved_path=None):
+    """Where she is: the city saved on her page (location.json, only there once you've saved one), else
+    Location in config.json (latitude/longitude, or a City), else your internet connection's city
+    (guessed again each start, never written down)."""
+    try:
+        with open(saved_path or SAVED_LOCATION, encoding="utf-8") as f:
+            saved = json.load(f)
+        if _num(saved.get("lat")) is not None and _num(saved.get("lon")) is not None:
+            return dict(saved, **{"from": "saved"})
+    except (OSError, ValueError):
+        pass
     loc = cfg.get("Location") or {}
     lat, lon = _num(loc.get("Latitude")), _num(loc.get("Longitude"))
     if lat is not None and lon is not None:
         return {"lat": lat, "lon": lon, "name": loc.get("Name") or loc.get("City") or f"{lat:.2f}, {lon:.2f}", "from": "config"}
     city = (loc.get("City") or "").strip()
-    try:
-        with open(LOCATION_JSON, encoding="utf-8") as f:
-            saved = json.load(f)
-        if saved.get("city", "") == city:
-            return saved
-    except (OSError, ValueError):
-        pass
-    found = None
     if city:
-        r = get("https://geocoding-api.open-meteo.com/v1/search", params={"name": city, "count": 1}, timeout=10, headers=UA)
-        hit = (r.json().get("results") or [None])[0]
+        hit = geocode(city, get=get)
         if hit:
-            found = {"lat": hit["latitude"], "lon": hit["longitude"],
-                     "name": ", ".join(x for x in (hit.get("name"), hit.get("country")) if x), "from": "city"}
-    # No city: a guess from this network's public address (two free services, in case one says no)
+            return dict(hit, **{"from": "config"})
+    return detect_location(get)
+
+
+_detected = {}
+
+
+def detect_location(get=requests.get):
+    """Your internet connection's city (two free services, in case one says no). Kept in memory only."""
+    if _detected:
+        return dict(_detected, **{"from": "network"})
     for url, country in (("https://ipapi.co/json/", "country_name"), ("https://ipwho.is/", "country")):
-        if found:
-            break
         try:
             d = get(url, timeout=10, headers=UA).json()
         except (requests.RequestException, ValueError):
             continue
         if _num(d.get("latitude")) is not None:
-            found = {"lat": d["latitude"], "lon": d["longitude"],
-                     "name": ", ".join(x for x in (d.get("city"), d.get(country)) if x), "from": "network"}
-    if not found:
-        raise RuntimeError("couldn't work out where this is: set Location in config.json")
-    found["city"] = city
-    os.makedirs(DATA, exist_ok=True)
-    with open(LOCATION_JSON, "w", encoding="utf-8") as f:
-        json.dump(found, f)
-    return found
+            _detected.update(lat=d["latitude"], lon=d["longitude"],
+                             name=", ".join(x for x in (d.get("city"), d.get(country)) if x))
+            return {"lat": d["latitude"], "lon": d["longitude"], "name": _detected["name"], "from": "network"}
+    raise RuntimeError("couldn't work out where this is: save a city on her page, or set Location in config.json")
+
+
+def save_location(city, get=requests.get, path=None):
+    """The "Save as my location" button: location.json (gitignored), and she starts over there."""
+    hit = geocode(city, get=get)
+    if not hit:
+        return None
+    with open(path or SAVED_LOCATION, "w", encoding="utf-8") as f:
+        json.dump({"lat": hit["lat"], "lon": hit["lon"], "name": hit["name"]}, f)
+    move_home()
+    return hit
+
+
+def forget_location(path=None):
+    """Back to your internet connection's city: location.json goes."""
+    try:
+        os.remove(path or SAVED_LOCATION)
+    except OSError:
+        pass
+    move_home()
+
+
+def move_home():
+    """A new home: everything about the old one is dropped and fetched again for the new one."""
+    for k in ("location", "weather", "air", "coast", "marine"):
+        STATE[k] = None
+    try:
+        os.remove(COAST_JSON)
+    except OSError:
+        pass
+    _wake_weather.set()
 
 
 CURRENT = ("temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,"
@@ -379,13 +412,24 @@ def air_words(aqi):
             else "unhealthy" if aqi <= 200 else "very unhealthy")
 
 
+_wake_weather = threading.Event()
+
+
 def weather_loop():
     while True:
+        _wake_weather.clear()
         try:
             if not STATE["location"]:
                 STATE["location"] = resolve_location()
             STATE["weather"] = fetch_weather(STATE["location"])
             STATE["weather_error"] = None
+            if time.time() - (STATE.get("marine") or {}).get("ts", 0) > 1800:
+                try:
+                    if not STATE.get("coast"):
+                        STATE["coast"] = find_coast(STATE["location"], (CFG.get("Coast") or "").strip())
+                    STATE["marine"] = fetch_marine(STATE["coast"])
+                except Exception:
+                    pass            # the sea can wait: the weather comes first
             if time.time() - (STATE.get("air") or {}).get("ts", 0) > 1800:
                 try:
                     STATE["air"] = fetch_air(STATE["location"])
@@ -393,10 +437,10 @@ def weather_loop():
                     pass            # the weather matters more: no air quality this round
             w = STATE["weather"]
             note_reading("Outside", w["temp"], w["hum"], "open-meteo")
-            time.sleep(CFG["WeatherMinutes"] * 60)
+            _wake_weather.wait(CFG["WeatherMinutes"] * 60)
         except Exception as e:      # no internet yet, a timeout: try again soon
             STATE["weather_error"] = f"{type(e).__name__}: {e}"[:160]
-            time.sleep(60)
+            _wake_weather.wait(60)
 
 
 # ── Her own sensor: the Arduino ────────────────────────────────────────────────────────────────
@@ -628,6 +672,295 @@ def snapshot(max_age_s=600):
         return {k: dict(v) for k, v in NOW.items() if v["ts"] >= cut}
 
 
+# ── Every sensor in its robot's own colour (the accent in its repo's colour_scheme.xml) ───────
+ROBOT_REPOS = {"NORA": "NORA-Robot-v00", "MILA": "MILA-Robot-v00", "NIKA": "NIKA-Robot-v00", "WHIP": "WHIP-Robot-v00",
+               "KIDA00": "KIDA-Robot-v00", "KIDA01": "KIDA-Robot-v01", "IDA": "IDA-Robot-v00", "ARM": "ARM-Robot-v01",
+               "ARIA": "ARIA-Robot-v00", "RITA": "RITA", "DREAM": "DREAM", "NINA": "NINA", "TINA": "TINA", "RIFT": "RIFT"}
+COLOURS_BUILT_IN = {"NORA": "#F7BF28", "MILA": "#1FD4DE", "NIKA": "#D9703A", "WHIP": "#D34859", "KIDA01": "#DF5BA3",
+                    "AURA": "#5EC8F2", "Outside": "#F2A65E"}   # for a PC without the robots' repos beside her
+
+
+def robot_colours():
+    """{name: "#RRGGBB"}: each robot's accent from its repo next to hers, else the built-in copy."""
+    out = dict(COLOURS_BUILT_IN)
+    for name, repo in ROBOT_REPOS.items():
+        try:
+            with open(os.path.join(HERE, "..", repo, "colour_scheme.xml"), encoding="utf-8") as f:
+                m = re.search(r'name="accent"\s+value="(#[0-9A-Fa-f]{6})"', f.read())
+            if m:
+                out[name] = m.group(1).upper()
+        except OSError:
+            pass
+    out["AURA"], out["Outside"] = COLOURS_BUILT_IN["AURA"], COLOURS_BUILT_IN["Outside"]
+    return out
+
+
+COLOURS = robot_colours()
+
+
+# ── Her own rain forecast: every sensor in the fleet, and the barometer ──────────────────────
+def dew_point(t, rh):
+    """Magnus formula, °C."""
+    if t is None or rh is None or rh <= 0:
+        return None
+    a, b = 17.62, 243.12
+    g = math.log(rh / 100.0) + a * t / (b + t)
+    return b * g / (a - g)
+
+
+def humidity_trend(rows, now=None, window_h=2.0):
+    """%/hour over the last couple of hours (a least-squares line), or None without enough readings."""
+    now = now or time.time()
+    pts = [(ts, h) for ts, _, h in rows if h is not None and now - ts <= window_h * 3600]
+    if len(pts) < 4 or pts[-1][0] - pts[0][0] < 1800:
+        return None
+    n = len(pts)
+    mx = sum(t for t, _ in pts) / n
+    my = sum(h for _, h in pts) / n
+    sxx = sum((t - mx) ** 2 for t, _ in pts)
+    if not sxx:
+        return None
+    return sum((t - mx) * (h - my) for t, h in pts) / sxx * 3600
+
+
+def rain_outlook(weather, history_rows, now_readings, now=None):
+    """Rain in the next few hours, in her own words and numbers. Starts from Open-Meteo's chance, then
+    each sign moves it: humidity rising across the fleet's sensors, air close to saturation, the
+    barometer falling, storm energy. The more sensors agree, the surer she is."""
+    now = now or time.time()
+    w = weather or {}
+    soon = w.get("soon") or {}
+    base = soon.get("rain_chance") if soon.get("rain_chance") is not None else w.get("rain_chance")
+    chance = float(base) if base is not None else 30.0
+    reasons = [f"Open-Meteo says {base:.0f}%" if base is not None else "Open-Meteo hasn't said"]
+    trends, spreads, used = [], [], []
+    for name, r in now_readings.items():
+        if name == "Outside" or r.get("temp") is None or r.get("hum") is None:
+            continue
+        tr = humidity_trend(history_rows.get(name, []), now)
+        dp = dew_point(r["temp"], r["hum"])
+        if tr is not None:
+            trends.append(tr)
+        if dp is not None:
+            spreads.append(r["temp"] - dp)
+        used.append(name)
+    n = len(used)
+    avg_trend = sum(trends) / len(trends) if trends else None
+    avg_spread = sum(spreads) / len(spreads) if spreads else None
+    if avg_trend is not None:
+        if avg_trend >= 3:
+            chance += 15
+            reasons.append(f"humidity rising {avg_trend:.1f}%/h across {len(trends)} sensor{'s' if len(trends) != 1 else ''}")
+        elif avg_trend >= 1:
+            chance += 7
+            reasons.append(f"humidity creeping up ({avg_trend:.1f}%/h)")
+        elif avg_trend <= -2:
+            chance -= 10
+            reasons.append(f"humidity falling ({avg_trend:.1f}%/h)")
+    if avg_spread is not None:
+        if avg_spread < 3:
+            chance += 12
+            reasons.append(f"the air is nearly saturated ({avg_spread:.1f}° from its dew point)")
+        elif avg_spread > 15:
+            chance -= 8
+            reasons.append("the air is dry")
+    pt = w.get("pressure_trend")
+    if pt == "falling fast":
+        chance += 15
+        reasons.append("the barometer is falling fast")
+    elif pt == "falling":
+        chance += 7
+        reasons.append("the barometer is falling")
+    elif pt in ("rising", "rising fast"):
+        chance -= 8
+        reasons.append("the barometer is rising")
+    if w.get("storm_potential") == "high":
+        chance += 10
+        reasons.append("there's storm energy in the air")
+    chance = max(0, min(100, round(chance)))
+    agree = len(trends) >= 2 and max(trends) - min(trends) < 4
+    confidence = "high" if n >= 4 and agree else "medium" if n >= 2 else "low"
+    return {"chance": chance, "confidence": confidence, "sensors": n, "sensor_names": used,
+            "humidity_trend": round(avg_trend, 1) if avg_trend is not None else None,
+            "dew_spread": round(avg_spread, 1) if avg_spread is not None else None, "reasons": reasons}
+
+
+def outlook_now():
+    with HISTORY.lock:
+        rows = {k: list(v) for k, v in HISTORY.rows.items()}
+    return rain_outlook(STATE["weather"], rows, snapshot())
+
+
+# ── The sea: the nearest coast's tides, waves, swell, currents and sea temperature (Open-Meteo marine) ──
+MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
+COAST_JSON = os.path.join(DATA, "coast.json")
+BEARINGS = 16                    # points per ring when looking for the sea
+RING_KM = 50                     # rings 50 km apart...
+MAX_KM = 2500                    # ...out to this far
+MARINE_CURRENT = ("wave_height,wave_direction,wave_period,wind_wave_height,wind_wave_direction,wind_wave_period,"
+                  "swell_wave_height,swell_wave_direction,swell_wave_period,sea_surface_temperature,"
+                  "ocean_current_velocity,ocean_current_direction,sea_level_height_msl")
+
+
+def _offset(lat, lon, km, bearing_deg):
+    """The point km away on a bearing (a small-distance sphere: plenty for finding the sea)."""
+    r = 6371.0
+    la, lo, b = math.radians(lat), math.radians(lon), math.radians(bearing_deg)
+    d = km / r
+    la2 = math.asin(math.sin(la) * math.cos(d) + math.cos(la) * math.sin(d) * math.cos(b))
+    lo2 = lo + math.atan2(math.sin(b) * math.sin(d) * math.cos(la), math.cos(d) - math.sin(la) * math.sin(la2))
+    return round(math.degrees(la2), 3), round((math.degrees(lo2) + 540) % 360 - 180, 3)
+
+
+def distance_km(a_lat, a_lon, b_lat, b_lon):
+    la1, la2 = math.radians(a_lat), math.radians(b_lat)
+    dla, dlo = la2 - la1, math.radians(b_lon - a_lon)
+    h = math.sin(dla / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlo / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+
+def _sea_at(points, get):
+    """Which of these points the marine model covers (inland ones come back empty). One request."""
+    r = get(MARINE_URL, timeout=20, headers=UA, params={
+        "latitude": ",".join(str(p[0]) for p in points), "longitude": ",".join(str(p[1]) for p in points),
+        "current": "wave_height,sea_surface_temperature,sea_level_height_msl"})
+    r.raise_for_status()
+    out = r.json()
+    out = out if isinstance(out, list) else [out]
+    # real sea: a temperature, a tide, waves (a tidal flat or a lagoon cell can have waves and nothing else)
+    return [all((o.get("current") or {}).get(k) is not None for k in ("wave_height", "sea_surface_temperature", "sea_level_height_msl"))
+            for o in out]
+
+
+def _place_name(lat, lon, get, sleep=time.sleep):
+    """The nearest city, town or village to a sea point, from OpenStreetMap (Nominatim), looking a little way
+    inland in a few directions (one request a second, as OSM asks; done once, then remembered). On an empty
+    coast: the region ("the Sonora coast")."""
+    region = None
+    for km in (0, 15, 35):
+        for i in range(1 if km == 0 else 8):
+            la, lo = (lat, lon) if km == 0 else _offset(lat, lon, km, 45 * i)
+            try:
+                a = get("https://nominatim.openstreetmap.org/reverse", timeout=10, headers=UA, params={
+                    "lat": la, "lon": lo, "format": "jsonv2", "zoom": 10, "accept-language": "en"}).json().get("address", {})
+            except Exception:
+                a = {}
+            sleep(1.1)
+            town = a.get("city") or a.get("town") or a.get("village")
+            if town:
+                return town
+            region = region or a.get("state") or a.get("region")
+    return f"the {region} coast" if region else None
+
+
+def find_coast(home, city="", get=requests.get):
+    """The nearest sea point the marine model covers: around a coastal city you name (config Coast), or the
+    nearest coast to home, found by rings of points 50 km apart. Remembered in data/coast.json."""
+    key = {"lat": round(home["lat"], 2), "lon": round(home["lon"], 2), "city": city}
+    try:
+        with open(COAST_JSON, encoding="utf-8") as f:
+            saved = json.load(f)
+        if saved.get("key") == key:
+            return saved
+    except (OSError, ValueError):
+        pass
+    if city:
+        c = geocode(city, get=get)
+        if not c:
+            raise RuntimeError(f"couldn't find the coastal city {city}")
+        start, rings, name = c, [0, 5, 10, 20, 35, 50, 75, 100], c["name"]
+    else:
+        # home first (a coastal city's own sea), then close by, then rings 50 km apart
+        start, rings, name = home, [0, 5, 10, 25] + list(range(RING_KM, MAX_KM + 1, RING_KM)), None
+    for km in rings:
+        pts = [(round(start["lat"], 3), round(start["lon"], 3))] if km == 0 else \
+            [_offset(start["lat"], start["lon"], km, 360 * i / BEARINGS) for i in range(BEARINGS)]
+        hits = [p for p, ok in zip(pts, _sea_at(pts, get)) if ok]
+        if hits:
+            sea = min(hits, key=lambda p: distance_km(home["lat"], home["lon"], *p))
+            if not name:                             # name it after the nearest city to that sea point
+                name = _place_name(sea[0], sea[1], get=get) or f"the coast {km} km away"
+            km_away = round(distance_km(home["lat"], home["lon"], *sea))
+            found = {"key": key, "lat": sea[0], "lon": sea[1], "name": name, "km": km_away,
+                     "direction": compass(_bearing((home["lat"], home["lon"]), sea)) if km_away >= 3 else "here"}
+            os.makedirs(DATA, exist_ok=True)
+            with open(COAST_JSON, "w", encoding="utf-8") as f:
+                json.dump(found, f)
+            return found
+    raise RuntimeError("no sea within reach: set Coast in config.json")
+
+
+def _bearing(a, b):
+    la1, la2 = math.radians(a[0]), math.radians(b[0])
+    dlo = math.radians(b[1] - a[1])
+    x = math.sin(dlo) * math.cos(la2)
+    y = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(dlo)
+    return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+
+def tides(times, levels):
+    """High and low tides from the hourly sea level: each turning point, its time refined between the
+    hours (a parabola through three points), and its height."""
+    out = []
+    for i in range(1, len(levels) - 1):
+        a, b, c = levels[i - 1], levels[i], levels[i + 1]
+        if None in (a, b, c):
+            continue
+        if (b > a and b >= c) or (b < a and b <= c):
+            denom = a - 2 * b + c
+            shift = 0.5 * (a - c) / denom if denom else 0.0          # -0.5..0.5 h from this hour
+            height = b - 0.25 * (a - c) * shift
+            t = time.mktime(time.strptime(times[i], "%Y-%m-%dT%H:%M")) + shift * 3600
+            out.append({"kind": "high" if b > a else "low", "at": time.strftime("%H:%M", time.localtime(t)),
+                        "day": time.strftime("%a", time.localtime(t)), "ts": t, "m": round(height, 2)})
+    return out
+
+
+def fetch_marine(coast, get=requests.get):
+    r = get(MARINE_URL, timeout=20, headers=UA, params={
+        "latitude": coast["lat"], "longitude": coast["lon"], "timezone": "auto", "current": MARINE_CURRENT,
+        "hourly": "sea_level_height_msl,wave_height", "past_hours": 2, "forecast_hours": 48,
+        "daily": "wave_height_max,swell_wave_height_max,wave_direction_dominant", "forecast_days": 2})
+    r.raise_for_status()
+    d = r.json()
+    c, h, day = d.get("current", {}), d.get("hourly", {}), d.get("daily", {})
+    n = lambda k: _num(c.get(k))
+    levels = [_num(x) for x in h.get("sea_level_height_msl") or []]
+    turns = tides(h.get("time") or [], levels)
+    now_ts = time.time()
+    ahead = [t for t in turns if t["ts"] >= now_ts]
+    next_high = next((t for t in ahead if t["kind"] == "high"), None)
+    next_low = next((t for t in ahead if t["kind"] == "low"), None)
+    rising = ahead[0]["kind"] == "high" if ahead else None
+    highs, lows = [t["m"] for t in turns if t["kind"] == "high"], [t["m"] for t in turns if t["kind"] == "low"]
+    return {
+        "where": coast.get("name"), "km": coast.get("km"), "direction": coast.get("direction"),
+        "sea_temp": n("sea_surface_temperature"),
+        "waves": {"height_m": n("wave_height"), "period_s": n("wave_period"), "from": compass(n("wave_direction"))},
+        "wind_waves": {"height_m": n("wind_wave_height"), "period_s": n("wind_wave_period"), "from": compass(n("wind_wave_direction"))},
+        "swell": {"height_m": n("swell_wave_height"), "period_s": n("swell_wave_period"), "from": compass(n("swell_wave_direction"))},
+        "current": {"kmh": n("ocean_current_velocity"), "towards": compass(n("ocean_current_direction"))},
+        "tide": {"now_m": n("sea_level_height_msl"), "rising": rising, "next_high": next_high, "next_low": next_low,
+                 "range_m": round(max(highs) - min(lows), 2) if highs and lows else None,
+                 "turns": [t for t in turns if t["ts"] >= now_ts - 3600][:6],
+                 "hours": [[t[-5:], v] for t, v in zip(h.get("time") or [], levels)]},
+        "today_max_wave_m": _num((day.get("wave_height_max") or [None])[0]),
+        "tomorrow_max_wave_m": _num((day.get("wave_height_max") or [None, None])[1]) if len(day.get("wave_height_max") or []) > 1 else None,
+        "surf": surf_words(n("swell_wave_height"), n("swell_wave_period")),
+        "ts": time.time()}
+
+
+def surf_words(swell_m, period_s):
+    """A surfer's quick read of the swell."""
+    if swell_m is None:
+        return None
+    if swell_m < 0.4:
+        return "flat"
+    quality = "clean, long-period" if (period_s or 0) >= 10 else "short and choppy" if (period_s or 0) < 7 else "decent"
+    size = "small" if swell_m < 1 else "fun-sized" if swell_m < 1.8 else "big" if swell_m < 3 else "huge"
+    return f"{size}, {quality}"
+
+
 # ── Europe only: pollen, ammonia, lightning (Open-Meteo has them from European models) ────────
 POLLENS = ("alder", "birch", "grass", "mugwort", "olive", "ragweed")
 EU_AQI = ("european_aqi", "european_aqi_pm2_5", "european_aqi_pm10", "european_aqi_nitrogen_dioxide",
@@ -804,6 +1137,10 @@ def answer(q):
             " It's full tonight!" if m["phase"] == "full" else f" Full moon in {m['days_to_full']:.0f} days.") + sky
     elif "sun" in low and ("rise" in low or "set" in low) and w and w.get("sunrise"):
         text = f"The sun rises at {w['sunrise'][-5:]} and sets at {w['sunset'][-5:]}." + sky
+    elif w and re.search(r"\b(will it rain|rain later|going to rain|chance of rain|umbrella)\b", low):
+        o = outlook_now()
+        text = (f"I'd say {o['chance']}% for rain in the next few hours ({o['confidence']} confidence, "
+                f"{o['sensors']} sensor{'s' if o['sensors'] != 1 else ''}): " + ", ".join(o["reasons"]) + ".")
     elif w and re.search(r"pressure|barometer", low):
         text = (f"The pressure is {w.get('pressure_hpa'):.0f} hPa and {w.get('pressure_trend')}"
                 f" ({w.get('pressure_change_3h'):+.1f} in 3 hours)." if w.get("pressure_hpa") is not None else "I don't know the pressure yet.")
@@ -861,6 +1198,25 @@ def answer(q):
         else:
             text = (f"The freezing level is {w.get('freezing_level_m') or 0:.0f} m up. Snow depth {pr.get('snow_depth_m') or 0:.2f} m, "
                     f"snowfall today {((w.get('today_summary') or {}).get('snowfall_cm') or 0):.1f} cm.")
+    elif re.search(r"\b(tide|tides|waves?|surf|swell|sea|ocean|beach|coast)\b", low):
+        m = STATE.get("marine")
+        if not m:
+            text = "I haven't reached the sea yet. Give me a minute."
+        else:
+            t = m["tide"]
+            bits = [f"At the sea right here" if m.get("direction") == "here" else
+                    (f"On {m['where']}" if str(m.get("where", "")).startswith("the ") else f"At the coast near {m['where']}")]
+            if m.get("sea_temp") is not None:
+                bits.append(f"the sea is {fmt(m['sea_temp'])}")
+            if (m.get("waves") or {}).get("height_m") is not None:
+                bits.append(f"waves {m['waves']['height_m']:.1f} m every {m['waves'].get('period_s') or 0:.0f} s")
+            text = ", ".join(bits) + "."
+            if t.get("next_high") or t.get("next_low"):
+                text += (f" The tide is {'coming in' if t.get('rising') else 'going out'}: "
+                         + " and ".join(f"{x['kind']} tide at {x['at']}" for x in sorted((x for x in (t.get("next_high"), t.get("next_low")) if x),
+                                                                              key=lambda x: x["ts"])) + ".")
+            if m.get("surf") and re.search(r"surf|swell|wave", low):
+                text += f" The surf's {m['surf']}."
     elif "story" in low:
         text = weather_story_now()
     else:
@@ -886,6 +1242,24 @@ def page():
     return render_template("index.html", name=NAME, port=PORT)
 
 
+@app.route("/coast")
+def coast_page():
+    return render_template("coast.html", name=NAME)
+
+
+@app.route("/api/coast")
+def api_coast():
+    """The nearest coast (or config Coast): tides, waves, swell, currents, sea temperature."""
+    try:
+        if not STATE.get("marine"):
+            if not STATE.get("coast"):
+                STATE["coast"] = find_coast(STATE["location"] or resolve_location(), (CFG.get("Coast") or "").strip())
+            STATE["marine"] = fetch_marine(STATE["coast"])
+        return jsonify(STATE["marine"])
+    except Exception as e:
+        return jsonify({"error": f"I couldn't reach the sea ({e})."}), 502
+
+
 @app.route("/europe")
 def europe_page():
     return render_template("europe.html", name=NAME)
@@ -904,17 +1278,79 @@ def api_europe():
         return jsonify({"error": f"Open-Meteo didn't answer ({type(e).__name__})."}), 502
 
 
+@app.route("/avatar.jpg")
+def avatar():
+    return send_from_directory(os.path.join(HERE, "images"), "aura_avatar.jpg", max_age=86400)
+
+
 @app.route("/ping")
 def ping():
     return f"{NAME} alive", 200, {"Content-Type": "text/plain"}
+
+
+_viewing = {}                    # city -> (when, {"location", "weather", "air"}): other cities, looked at on her page
+VIEW_CACHE_S = 600
+
+
+def view_city(city, get=requests.get):
+    """Another city's weather, for her page's dropdown. It isn't saved and isn't on the graph: the graph's
+    outside line is always her own city."""
+    hit = _viewing.get(city.lower())
+    if hit and time.time() - hit[0] < VIEW_CACHE_S:
+        return hit[1]
+    loc = geocode(city, get=get)
+    if not loc:
+        return None
+    w = fetch_weather(loc, get=get)
+    try:
+        air = fetch_air(loc, get=get)
+    except Exception:
+        air = None
+    out = {"location": loc, "weather": w, "air": air}
+    _viewing[city.lower()] = (time.time(), out)
+    return out
+
+
+@app.route("/api/cities")
+def api_cities():
+    """Her page's dropdown: home (saved, or your connection's city), and a list to look at."""
+    home = STATE["location"] or resolve_location()
+    return jsonify({"home": home.get("name"), "from": home.get("from"), "saved": home.get("from") == "saved",
+                    "cities": [c for c in CFG.get("Cities", []) if c.lower() not in str(home.get("name", "")).lower()]})
+
+
+@app.route("/api/location", methods=["POST", "DELETE"])
+def api_location():
+    """POST {"city": "..."}: save it as her location (location.json). DELETE: back to the connection's city."""
+    if request.method == "DELETE":
+        forget_location()
+        return jsonify({"ok": True})
+    city = str((request.get_json(silent=True) or {}).get("city", "")).strip()[:80]
+    hit = save_location(city) if city else None
+    if not hit:
+        return jsonify({"ok": False, "error": f"I couldn't find {city or 'that'}."}), 404
+    return jsonify({"ok": True, "home": hit["name"]})
 
 
 @app.route("/api/now")
 def api_now():
     now = snapshot()
     now.pop("Outside", None)
+    city = (request.args.get("city") or "").strip()[:80]
+    if city:
+        try:
+            v = view_city(city)
+        except Exception as e:
+            return jsonify({"error": f"Open-Meteo didn't answer ({type(e).__name__})."}), 502
+        if not v:
+            return jsonify({"error": f"I couldn't find {city}."}), 404
+        return jsonify({"outside": v["weather"], "location": v["location"], "air": v["air"], "inside": now,
+                        "viewing": True, "says": f"Looking at {v['location']['name']}. The graph stays at home.",
+                        "units": CFG.get("Units", "C"), "moon": moon(), "sky_word": weather_word(v["weather"]), "problems": [],
+                        "colours": COLOURS, "rain_outlook": None})
     return jsonify({"outside": STATE["weather"], "location": STATE["location"], "inside": now,
                     "says": says(), "units": CFG.get("Units", "C"), "moon": moon(), "air": STATE.get("air"),
+                    "colours": COLOURS, "rain_outlook": outlook_now() if STATE["weather"] else None,
                     "sky_word": weather_word(STATE["weather"]),
                     "problems": [p for p in (STATE["weather_error"] and f"Weather: {STATE['weather_error']}",
                                              STATE["board_error"], STATE["fleet_error"]) if p]})

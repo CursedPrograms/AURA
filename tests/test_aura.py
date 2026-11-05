@@ -72,14 +72,24 @@ def test_says():
 
 
 def test_location_and_weather(monkeypatch, tmp_path):
-    monkeypatch.setattr(aura, "LOCATION_JSON", str(tmp_path / "loc.json"))
-    monkeypatch.setattr(aura, "DATA", str(tmp_path))
-    cfg = {"Location": {"City": "Cape Town"}}
-    get = lambda url, **kw: Resp({"results": [{"latitude": -33.9, "longitude": 18.4, "name": "Cape Town", "country": "South Africa"}]})
-    loc = aura.resolve_location(cfg, get=get)
-    assert loc["name"] == "Cape Town, South Africa" and loc["from"] == "city"
+    saved = str(tmp_path / "location.json")
+    monkeypatch.setattr(aura, "SAVED_LOCATION", saved)
+    monkeypatch.setattr(aura, "COAST_JSON", str(tmp_path / "coast.json"))
+    geo = lambda url, **kw: Resp({"results": [{"latitude": -33.9, "longitude": 18.4, "name": "Cape Town", "country": "South Africa"}]})
+    loc = aura.resolve_location({"Location": {"City": "Cape Town"}}, get=geo)
+    assert loc["name"] == "Cape Town, South Africa" and loc["from"] == "config"
     fixed = aura.resolve_location({"Location": {"Latitude": 1, "Longitude": 2, "Name": "Home"}})
     assert fixed["name"] == "Home"
+    aura._detected.clear()
+    net = lambda url, **kw: Resp({"latitude": 10, "longitude": 20, "city": "Somewhere", "country_name": "Land"})
+    assert aura.resolve_location({}, get=net)["from"] == "network"
+    assert not os.path.exists(saved)                                     # guessing never writes location.json
+    assert aura.save_location("Cape Town", get=geo)["name"] == "Cape Town, South Africa"
+    home = aura.resolve_location({"Location": {"Latitude": 1, "Longitude": 2}}, get=net)
+    assert home["from"] == "saved" and home["name"] == "Cape Town, South Africa"   # the saved city wins
+    aura.forget_location()
+    assert not os.path.exists(saved) and aura.resolve_location({}, get=net)["from"] == "network"
+    loc = {"lat": -33.9, "lon": 18.4}
     meteo = {"current": {"temperature_2m": 17.2, "relative_humidity_2m": 63, "apparent_temperature": 16,
                          "weather_code": 3, "wind_speed_10m": 12, "precipitation": 0, "is_day": 1},
              "daily": {"temperature_2m_max": [20], "temperature_2m_min": [11], "precipitation_probability_max": [10]}}
@@ -213,3 +223,49 @@ def test_europe(monkeypatch):
     far = aura.fetch_europe(-26.2, 28.0, get=lambda url, **kw: Resp(none if "air-quality" in url else {"hourly": {}}))
     assert not far["in_europe"] and far["pollen"]["birch"]["now"] is None
     assert aura.app.test_client().get("/europe").status_code == 200
+
+
+def test_colours_are_the_robots_own():
+    assert aura.COLOURS["NORA"] == "#F7BF28" and aura.COLOURS["MILA"] == "#1FD4DE"
+    assert aura.COLOURS["AURA"] == "#5EC8F2" and aura.COLOURS["Outside"] == "#F2A65E"
+
+
+def test_rain_outlook_more_sensors_more_sure():
+    now = 1_800_000_000
+    rising = lambda start: [(now - 7200 + i * 600, 25.0, start + i * 1.0) for i in range(13)]   # +6 %/h
+    w = {"rain_chance": 30, "soon": {"rain_chance": 40}, "pressure_trend": "falling fast", "storm_potential": "high"}
+    one = aura.rain_outlook(w, {"AURA": rising(60)}, {"AURA": {"temp": 21.0, "hum": 72.0}}, now=now)
+    many = aura.rain_outlook(w, {n: rising(60) for n in ("AURA", "MILA", "NORA", "KIDA01")},
+                             {n: {"temp": 21.0, "hum": 72.0} for n in ("AURA", "MILA", "NORA", "KIDA01")}, now=now)
+    assert one["confidence"] == "low" and many["confidence"] == "high" and many["sensors"] == 4
+    assert many["chance"] > 40 and any("barometer" in r for r in many["reasons"])
+    dry = aura.rain_outlook({"rain_chance": 10, "pressure_trend": "rising"}, {}, {"AURA": {"temp": 30.0, "hum": 15.0}}, now=now)
+    assert dry["chance"] < 10
+    assert round(aura.dew_point(20, 50), 1) == 9.3
+
+
+def test_tides_and_surf():
+    times = [f"2026-11-05T{h:02d}:00" for h in range(0, 13)]
+    levels = [0.0, 0.5, 0.9, 1.0, 0.8, 0.3, -0.3, -0.8, -1.0, -0.7, -0.2, 0.4, 0.8]
+    t = aura.tides(times, levels)
+    assert [x["kind"] for x in t] == ["high", "low"] and t[0]["at"] == "02:50" and t[1]["at"] == "07:54"   # between the hours
+    assert aura.surf_words(0.2, 5) == "flat" and aura.surf_words(1.4, 12) == "fun-sized, clean, long-period"
+
+
+def test_find_coast_rings(monkeypatch, tmp_path):
+    monkeypatch.setattr(aura, "COAST_JSON", str(tmp_path / "coast.json"))
+    calls = []
+
+    def get(url, **kw):
+        if "marine" in url:
+            lats = kw["params"]["latitude"].split(",")
+            calls.append(len(lats))
+            # sea only to the east, from 100 km out
+            out = [{"current": {"wave_height": 1.0, "sea_surface_temperature": 20, "sea_level_height_msl": 0.2}
+                    if float(lo) > 20.9 else {"wave_height": None}} for lo in kw["params"]["longitude"].split(",")]
+            return Resp(out if len(out) > 1 else out[0])
+        return Resp({"address": {"city": "Seaside"}})
+    c = aura.find_coast({"lat": 0.0, "lon": 20.0}, get=get)
+    assert c["name"] == "Seaside" and c["direction"] == "E" and 90 < c["km"] < 160
+    here = aura.find_coast({"lat": 0.0, "lon": 21.0}, city="", get=get)   # cached for the old home: a new key
+    assert here["direction"] == "here"

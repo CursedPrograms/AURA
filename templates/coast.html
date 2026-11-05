@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ name }} · the coast</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/aura.css">
+<link rel="stylesheet" href="/static/coast.css">
+<script src="/static/coast.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="brand"><img class="face" src="/static/avatar_round.png" alt="AURA" width="64" height="64">{{ name }}</div>
+  <nav class="links"><a href="/">The weather</a><a href="/europe">Europe</a></nav>
+  <div class="where" id="where">the coast</div>
+</header>
+
+<main>
+  <div class="speech">
+    <img class="portrait" src="/avatar.jpg" alt="AURA" width="96" height="96">
+    <p class="says" id="says">Looking for the sea...</p>
+  </div>
+
+  <section class="sea" id="sea"></section>
+
+  <section>
+    <h2>Tides</h2>
+    <div class="turns" id="turns"></div>
+    <canvas id="tide" height="220"></canvas>
+    <p class="muted small">Sea level against mean sea level, hour by hour, from Open-Meteo's marine model. It's modelled on a coarse grid:
+      good for planning a walk on the beach, not for navigation.</p>
+  </section>
+</main>
+</body>
+</html>

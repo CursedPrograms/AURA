@@ -1,0 +1,11 @@
+/* AURA's coast page: tides, waves, swell, currents and the sea (shares aura.css). */
+.sea { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.sea > div, .turns > div { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.sea dt, .turns .k { color: var(--sub); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.sea dd { margin: 2px 0 0; font-family: var(--mono); font-size: 18px; }
+.sea dd.note { font-family: var(--sans); font-size: 12px; color: var(--sun); }
+.turns { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.turns .v { font-family: var(--mono); font-size: 18px; }
+.turns .high .k { color: var(--sky); }
+.turns .low .k { color: var(--sun); }
+canvas#tide { width: 100%; height: 220px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
