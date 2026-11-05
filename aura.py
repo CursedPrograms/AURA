@@ -367,6 +367,7 @@ def fetch_weather(loc, get=requests.get):
         "high": _num(at("temperature_2m_max")), "low": _num(at("temperature_2m_min")),
         "rain_chance": _num(at("precipitation_probability_max")),
         "sunrise": at("sunrise"), "sunset": at("sunset"), "uv": _num(at("uv_index_max")),
+        "utc_offset_s": d.get("utc_offset_seconds"),
         "soon": dict(coming(later), gusty_at=next((later["time"][i + 1][-5:] for i, g in enumerate(gusts_ahead)
                                                    if g is not None and g >= 50 and i + 1 < len(later.get("time", []))), None)),
         "ts": time.time()}
@@ -673,10 +674,10 @@ def snapshot(max_age_s=600):
 
 
 # ── Every sensor in its robot's own colour (the accent in its repo's colour_scheme.xml) ───────
-ROBOT_REPOS = {"NORA": "NORA-Robot-v00", "MILA": "MILA-Robot-v00", "NIKA": "NIKA-Robot-v00", "WHIP": "WHIP-Robot-v00",
+ROBOT_REPOS = {"FLORA": "FLORA-Robot-v00", "NORA": "NORA-Robot-v00", "MILA": "MILA-Robot-v00", "NIKA": "NIKA-Robot-v00", "WHIP": "WHIP-Robot-v00",
                "KIDA00": "KIDA-Robot-v00", "KIDA01": "KIDA-Robot-v01", "IDA": "IDA-Robot-v00", "ARM": "ARM-Robot-v01",
                "ARIA": "ARIA-Robot-v00", "RITA": "RITA", "DREAM": "DREAM", "NINA": "NINA", "TINA": "TINA", "RIFT": "RIFT"}
-COLOURS_BUILT_IN = {"NORA": "#F7BF28", "MILA": "#1FD4DE", "NIKA": "#D9703A", "WHIP": "#D34859", "KIDA01": "#DF5BA3",
+COLOURS_BUILT_IN = {"FLORA": "#7BC96F", "NORA": "#F7BF28", "MILA": "#1FD4DE", "NIKA": "#D9703A", "WHIP": "#D34859", "KIDA01": "#DF5BA3",
                     "AURA": "#5EC8F2", "Outside": "#F2A65E"}   # for a PC without the robots' repos beside her
 
 
