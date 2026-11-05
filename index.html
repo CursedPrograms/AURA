@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AURA — Atmospheric Utility &amp; Reporting Automaton</title>
+<meta name="description" content="AURA is the DREAM Robotics fleet's weather station: the weather outside from Open-Meteo, the temperature and humidity in every room a robot is in, and a graph of one against the other.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="AURA — Atmospheric Utility &amp; Reporting Automaton">
+<meta property="og:description" content="The fleet's weather station: outside, every room, and the graph.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="images/aura_avatar.png">
+<link rel="icon" href="site/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="site/apple-touch-icon.png">
+<link rel="stylesheet" href="site/style.css">
+<script src="site/site.js" defer></script>
+</head>
+<body>
+
+<nav aria-label="Primary">
+  <div class="wrap">
+    <a class="brand" href="#top">AURA</a>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#quickstart">Quick start</a></li>
+      <li><a href="#api">API</a></li>
+      <li><a href="#apps">Apps</a></li>
+      <li><a href="https://github.com/CursedPrograms/AURA">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow">Cursed Entertainment</div>
+    <h1>AURA</h1>
+    <p class="tagline">Atmospheric Utility &amp; Reporting Automaton</p>
+    <p class="lede">The fleet's weather station. AURA knows what it's like outside, what it's like in every room a robot is in, and plots one against the other.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/CursedPrograms/AURA">View on GitHub</a>
+      <a class="btn" href="#quickstart">Quick start</a>
+      <a class="btn" href="https://ko-fi.com/cursedentertainment">Support on Ko-fi</a>
+    </div>
+    <div class="tags" aria-label="Technologies">
+      <span class="tag">Python</span>
+      <span class="tag">Flask</span>
+      <span class="tag">Arduino</span>
+      <span class="tag">Kotlin</span>
+      <span class="tag">Open-Meteo</span>
+      <span class="tag">MIT License</span>
+    </div>
+
+    <figure class="avatar">
+      <img src="images/aura_avatar.png" alt="AURA: a sun behind a cloud" width="768" height="768">
+      <figcaption>AURA &middot; avatar</figcaption>
+    </figure>
+  </div>
+</header>
+
+<main>
+<section id="overview">
+  <div class="wrap">
+    <h2>Overview</h2>
+    <h3 class="title">Inside, outside, and the graph</h3>
+    <div class="grid cols-3">
+      <div class="card">
+        <span class="k">Outside</span>
+        <h4>The weather where you are</h4>
+        <p>From Open-Meteo: open source, free, no API key. Temperature, feels-like, humidity, wind, today's high and low and the chance of rain, every 10 minutes.</p>
+      </div>
+      <div class="card">
+        <span class="k">Here</span>
+        <h4>Her own sensor</h4>
+        <p>An AHT10 on an Arduino over USB, the same sensor and code as MILA's. She finds the Arduino by herself.</p>
+      </div>
+      <div class="card">
+        <span class="k">Fleet</span>
+        <h4>Every robot's room</h4>
+        <p>MILA, NORA and anyone else who reports temperature and humidity, found through RIFT's fleet list, over WiFi or Bluetooth. Robots can push readings too.</p>
+      </div>
+      <div class="card">
+        <span class="k">Graph</span>
+        <h4>Inside against outside</h4>
+        <p>Temperature or humidity over 6 hours, 24 hours or 7 days. One reading a minute per source, kept for a week.</p>
+      </div>
+      <div class="card">
+        <span class="k">Voice</span>
+        <h4>In her own words</h4>
+        <p>&ldquo;It's 27&deg; and mostly clear outside, a 69% chance of rain today, so take an umbrella, 22&deg; in here.&rdquo;</p>
+      </div>
+      <div class="card">
+        <span class="k">Internet</span>
+        <h4>Through the fleet</h4>
+        <p>Everything on the RIFT WiFi shares the hub PC's connection, so she needs no dongle of her own.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <h2>Quick start</h2>
+    <h3 class="title">Arduino, then run.bat</h3>
+    <pre><span class="c"># 1. Flash scripts/aura_sensor/aura_sensor.ino: AHT10 SDA to A4, SCL to A5, VIN to 5V, GND to GND</span>
+<span class="c"># 2. Start her (sets up venv the first time)</span>
+run.bat
+<span class="c"># Her page</span>
+http://127.0.0.1:5017/</pre>
+    <p class="muted">Where she is: <code>Location</code> in <code>config.json</code> (latitude and longitude, or a city). Left empty, she guesses from your network's public address.</p>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <h2>API</h2>
+    <h3 class="title">Ask her, or tell her</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Request</th><th>Answer</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/now</code></td><td>Outside, every room, where she is and what she says</td></tr>
+          <tr><td><code>GET /api/history?hours=24</code></td><td>Every source's readings over time</td></tr>
+          <tr><td><code>GET /status</code></td><td>Like any robot's: her <code>temp</code> and <code>hum</code>, and outside's</td></tr>
+          <tr><td><code>POST /report</code></td><td><code>{"name": "KIDA01", "temp": 23.1, "hum": 45}</code> from a robot that would rather push</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="apps">
+  <div class="wrap">
+    <h2>Apps</h2>
+    <h3 class="title">In a window, and on your phone</h3>
+    <div class="grid cols-2">
+      <div class="card">
+        <span class="k">Windows</span>
+        <h4>aura.exe</h4>
+        <p>Her page in a native window. Keep it in her <code>builds</code> folder: if she isn't running, it starts <code>run.bat</code>.</p>
+        <p><a class="btn primary" href="https://github.com/CursedPrograms/AURA/raw/main/builds/aura.exe">Download aura.exe</a></p>
+      </div>
+      <div class="card">
+        <span class="k">Android</span>
+        <h4>The AURA app</h4>
+        <p>Her page full screen. FIND gets her address from RIFT's fleet list, or type it in.</p>
+        <p><a class="btn primary" href="https://github.com/CursedPrograms/AURA/raw/main/Android%20App/apk/AURA-debug-2026-11-05.apk">Download the APK</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer id="site-footer">&copy; Cursed Entertainment 2026</footer>
+<script src="https://cursedprograms.github.io/RIFT/site/footer.js"></script>
+
+<!-- DREAM-ECOSYSTEM:START -->
+<section class="eco">
+  <div class="eco-title">The DREAM Robotics ecosystem</div>
+  <div><strong>Minds</strong> — <a href="https://cursedprograms.github.io/DREAM/">DREAM</a> companion · <a href="https://cursedprograms.github.io/TINA/">TINA</a> engineer · <a href="https://cursedprograms.github.io/NINA/">NINA</a> caretaker · <a href="https://cursedprograms.github.io/RIFT/">RIFT</a> fleet hub · <a href="https://github.com/CursedPrograms/LYCEA">LYCEA</a> training school</div>
+  <div><strong>Robots</strong> — <a href="https://cursedprograms.github.io/NORA-Robot-v00/">NORA</a> · <a href="https://cursedprograms.github.io/MILA-Robot-v00/">MILA</a> · <a href="https://cursedprograms.github.io/WHIP-Robot-v00/">WHIP</a> · <a href="https://cursedprograms.github.io/KIDA-Robot-v00/">KIDA-00</a> · <a href="https://cursedprograms.github.io/KIDA-Robot-v01/">KIDA-01</a> · <a href="https://cursedprograms.github.io/IDA-Robot-v00/">IDA</a> · <a href="https://cursedprograms.github.io/ARM-Robot-v01/">ARM</a> · <a href="https://cursedprograms.github.io/NIKA-Robot-v00/">NIKA</a> · <a href="https://cursedprograms.github.io/ARIA-Robot-v00/">ARIA</a> · <a href="https://cursedprograms.github.io/AURA/">AURA</a> weather</div>
+  <div><strong>Remotes</strong> — <a href="https://cursedprograms.github.io/RITA/">RITA</a> handheld remote</div>
+</section>
+<!-- DREAM-ECOSYSTEM:END -->
+</body>
+</html>

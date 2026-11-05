@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+data/
+.pytest_cache/
+
+# The exe is built and kept
+!builds/
+!builds/*.exe

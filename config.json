@@ -1,0 +1,25 @@
+{
+  "Config": {
+    "AURA": {
+      "Port": 5017,
+      "RiftHost": "127.0.0.1",
+      "RiftPort": 5000,
+      "Location": {
+        "Latitude": null,
+        "Longitude": null,
+        "City": "",
+        "Name": ""
+      },
+      "Units": "C",
+      "WeatherMinutes": 10,
+      "FleetSeconds": 60,
+      "BoardPort": "auto",
+      "BoardBaud": 9600,
+      "HistoryDays": 7,
+      "SampleSeconds": 60,
+      "Bluetooth": {},
+      "BluetoothServer": true,
+      "FleetLadder": false
+    }
+  }
+}

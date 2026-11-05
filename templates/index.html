@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ name }} · weather station</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/aura.css">
+<script src="/static/aura.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="brand">{{ name }}</div>
+  <div class="where" id="where">finding where I am...</div>
+</header>
+
+<main>
+  <p class="says" id="says">I'm still gathering the weather. Give me a minute.</p>
+
+  <section class="outside" id="outside">
+    <div class="big"><span id="out-temp">--</span><span class="unit" id="out-unit">°</span></div>
+    <div class="words" id="out-words">waiting for the sky</div>
+    <dl class="facts">
+      <div><dt>Feels like</dt><dd id="out-feels">--</dd></div>
+      <div><dt>Humidity</dt><dd id="out-hum">--</dd></div>
+      <div><dt>Wind</dt><dd id="out-wind">--</dd></div>
+      <div><dt>Today</dt><dd id="out-range">--</dd></div>
+      <div><dt>Rain</dt><dd id="out-rain">--</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Inside</h2>
+    <div class="rooms" id="rooms"><p class="muted">No readings yet: her Arduino, and robots with a temperature sensor (MILA, NORA), show up here.</p></div>
+  </section>
+
+  <section>
+    <div class="chart-head">
+      <h2>Inside and outside</h2>
+      <div class="toggles">
+        <button data-what="temp" class="on">Temperature</button>
+        <button data-what="hum">Humidity</button>
+        <span class="gap"></span>
+        <button data-hours="6">6 h</button>
+        <button data-hours="24" class="on">24 h</button>
+        <button data-hours="168">7 days</button>
+      </div>
+    </div>
+    <canvas id="chart" height="320"></canvas>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <ul class="problems" id="problems"></ul>
+</main>
+</body>
+</html>
