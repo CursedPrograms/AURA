@@ -240,7 +240,8 @@ def fetch_weather(loc, get=requests.get):
         "latitude": loc["lat"], "longitude": loc["lon"], "timezone": "auto",
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,"
                    "wind_speed_10m,precipitation,is_day",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max", "forecast_days": 1})
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max",
+        "forecast_days": 1})
     r.raise_for_status()
     d = r.json()
     c, day = d.get("current", {}), d.get("daily", {})
@@ -250,7 +251,9 @@ def fetch_weather(loc, get=requests.get):
             "words": describe(c.get("weather_code")), "wind_kmh": _num(c.get("wind_speed_10m")),
             "rain_mm": _num(c.get("precipitation")), "day": bool(c.get("is_day", 1)),
             "high": _num(first("temperature_2m_max")), "low": _num(first("temperature_2m_min")),
-            "rain_chance": _num(first("precipitation_probability_max")), "ts": time.time()}
+            "rain_chance": _num(first("precipitation_probability_max")),
+            "sunrise": first("sunrise"), "sunset": first("sunset"), "uv": _num(first("uv_index_max")),
+            "ts": time.time()}
 
 
 def weather_loop():
@@ -405,7 +408,7 @@ def heartbeat():
     while True:
         try:
             r = requests.post(registry() + "/register", timeout=2, data={
-                "name": NAME, "type": "weather", "capabilities": f"weather,climate,web:{PORT}"})
+                "name": NAME, "type": "weather", "capabilities": f"weather,climate,web:{PORT},talk:{PORT},ask:{PORT}"})
             STATE["registered"] = r.ok
         except requests.RequestException:
             STATE["registered"] = False
@@ -457,6 +460,117 @@ def snapshot(max_age_s=600):
         return {k: dict(v) for k, v in NOW.items() if v["ts"] >= cut}
 
 
+# ── The moon (no internet needed: days since a known new moon) ─────────────────────────────────
+SYNODIC_DAYS = 29.530588853
+NEW_MOON_TS = 947182440          # 2000-01-06 18:14 UTC
+MOON_NAMES = ["new", "waxing crescent", "first quarter", "waxing gibbous",
+              "full", "waning gibbous", "last quarter", "waning crescent"]
+MOON_ICONS = ["\U0001F311", "\U0001F312", "\U0001F313", "\U0001F314",
+              "\U0001F315", "\U0001F316", "\U0001F317", "\U0001F318"]
+
+
+def moon(ts=None):
+    """Phase name, how lit (0-100 %), its age in days, the days to the next full moon, and an icon."""
+    age = ((ts or time.time()) - NEW_MOON_TS) / 86400 % SYNODIC_DAYS
+    f = age / SYNODIC_DAYS
+    i = int(f * 8 + 0.5) % 8
+    lit = (1 - math.cos(2 * math.pi * f)) / 2 * 100
+    to_full = (SYNODIC_DAYS / 2 - age) % SYNODIC_DAYS
+    return {"phase": MOON_NAMES[i], "icon": MOON_ICONS[i], "lit": round(lit), "age_days": round(age, 1),
+            "days_to_full": round(to_full, 1)}
+
+
+# ── Brainfuck, like the rest of the fleet: RIFT's phrasebook (Fleet/talk_bf.json) ──────────────
+# 17 is "wx?" (DREAM asking for the weather), 18-25 AURA's answers: sun, cloud, rain, fog, snow, storm, hot, cold.
+TALK_JSON = os.path.join(HERE, "..", "RIFT", "Fleet", "talk_bf.json")
+WX_ANSWERS = {"sunny": 18, "cloudy": 19, "rainy": 20, "foggy": 21, "snowy": 22, "stormy": 23, "hot": 24, "cold": 25}
+TONES = {"+": 1568, "-": 784, ">": 1319, "<": 1047, "[": 880, "]": 1175, ".": 2093, ",": 523}
+VOICE_PITCH = 1.25               # hers is light and airy (NINA's is 0.85, DREAM's deep)
+
+
+def phrasebook():
+    try:
+        with open(TALK_JSON, encoding="utf-8") as f:
+            return {u["index"]: u for u in json.load(f)}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def weather_word(w):
+    """The sky in one Brainfuck answer: storm, snow, rain or fog first, then hot or cold, else sun or cloud."""
+    if not w:
+        return None
+    code, t = w.get("code") or 0, w.get("temp")
+    if code >= 95:
+        return "stormy"
+    if 71 <= code <= 77 or code in (85, 86):
+        return "snowy"
+    if 51 <= code <= 67 or 80 <= code <= 82:
+        return "rainy"
+    if code in (45, 48):
+        return "foggy"
+    if t is not None and t >= 30:
+        return "hot"
+    if t is not None and t <= 8:
+        return "cold"
+    return "sunny" if code <= 1 else "cloudy"
+
+
+def chirp(u):
+    """Beeps utterance u's Brainfuck program, one tone per symbol, in her own pitch (Windows)."""
+    entry = phrasebook().get(u)
+    if not entry or os.name != "nt":
+        return False
+    import winsound
+    for ch in entry["bf"]:
+        winsound.Beep(max(37, min(32767, int(TONES.get(ch, 1000) * VOICE_PITCH))), 80 if ch == "." else 28)
+    return True
+
+
+# ── Asking her: the weather, a robot's readings, the moon, a story ─────────────────────────────
+def _robot_in(q, names):
+    flat = re.sub(r"[^a-z0-9]", "", q.lower())
+    return next((n for n in sorted(names, key=len, reverse=True) if re.sub(r"[^a-z0-9]", "", n.lower()) in flat), None)
+
+
+def answer(q):
+    """Her answer in words, and her Brainfuck reply (the sky in one word). Whatever you ask, she
+    finds a way back to the weather."""
+    q = (q or "").strip()
+    w = STATE["weather"]
+    now = snapshot()
+    word = weather_word(w)
+    reply = {"u": WX_ANSWERS[word], "text": phrasebook().get(WX_ANSWERS[word], {}).get("text", word)} if word else None
+    sky = f" Outside it's {fmt(w['temp'])} and {w['words']}, by the way." if w and w.get("temp") is not None else ""
+    low = q.lower()
+    who = _robot_in(q, [n for n in now if n != "Outside"])
+    if who:
+        r = now[who]
+        bits = [fmt(r["temp"]) if r.get("temp") is not None else None,
+                f"{r['hum']:.0f}% humidity" if r.get("hum") is not None else None]
+        text = f"{'In here it reads' if who == NAME else who + ' reads'} {' and '.join(b for b in bits if b)}." + sky
+    elif "moon" in low:
+        m = moon()
+        text = f"The moon is {m['phase']}, {m['lit']}% lit." + (
+            " It's full tonight!" if m["phase"] == "full" else f" Full moon in {m['days_to_full']:.0f} days.") + sky
+    elif "sun" in low and ("rise" in low or "set" in low) and w and w.get("sunrise"):
+        text = f"The sun rises at {w['sunrise'][-5:]} and sets at {w['sunset'][-5:]}." + sky
+    elif "story" in low:
+        text = weather_story_now()
+    else:
+        text = says()
+    return {"answer": text, "bf": reply, "about": who or ("moon" if "moon" in low else "weather")}
+
+
+def weather_story_now(seed=None):
+    import story
+    w = STATE["weather"] or {}
+    t = w.get("temp")
+    feel = "hot" if t is not None and t >= 28 else "cold" if t is not None and t <= 10 else "nice"
+    m = moon()
+    return story.weather_story(w.get("words", "sunny weather"), feel, moon=m["phase"] if m["lit"] > 0 else None, seed=seed)
+
+
 # ── Her web API and page ───────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 
@@ -476,7 +590,8 @@ def api_now():
     now = snapshot()
     now.pop("Outside", None)
     return jsonify({"outside": STATE["weather"], "location": STATE["location"], "inside": now,
-                    "says": says(), "units": CFG.get("Units", "C"),
+                    "says": says(), "units": CFG.get("Units", "C"), "moon": moon(),
+                    "sky_word": weather_word(STATE["weather"]),
                     "problems": [p for p in (STATE["weather_error"] and f"Weather: {STATE['weather_error']}",
                                              STATE["board_error"], STATE["fleet_error"]) if p]})
 
@@ -495,7 +610,40 @@ def status():
     return jsonify({"name": NAME, "mode": "weather", "temp": mine.get("temp"), "hum": mine.get("hum"),
                     "outside_temp": w.get("temp"), "outside_hum": w.get("hum"), "weather": w.get("words"),
                     "board": STATE["board"], "registered": STATE["registered"],
-                    "uptime_s": round(time.time() - STARTED), "says": says()})
+                    "moon": moon()["phase"], "uptime_s": round(time.time() - STARTED), "says": says()})
+
+
+@app.route("/ask")
+def ask_route():
+    """GET /ask?q=what's the weather / how warm is MILA / the moon / tell me a story. DREAM asks her
+    this way; with chirp=1 she also beeps her Brainfuck answer (the sky in one word)."""
+    a = answer(request.args.get("q", ""))
+    if request.args.get("chirp") == "1" and a["bf"]:
+        threading.Thread(target=chirp, args=(a["bf"]["u"],), daemon=True).start()
+    return jsonify(a)
+
+
+@app.route("/story")
+def story_route():
+    """A weather story from the TinyStories model (NINA's storyteller), opened with the real sky."""
+    try:
+        return jsonify({"story": weather_story_now()})
+    except Exception as e:
+        return jsonify({"error": f"the storyteller couldn't start: {e}"}), 503
+
+
+@app.route("/chirp")
+def chirp_route():
+    """RIFT's conversations (talk:): /chirp?u=<n> beeps that utterance, in her voice. 0-16 like every
+    robot, 17-25 the weather."""
+    try:
+        u = int(request.args.get("u", ""))
+    except ValueError:
+        u = -1
+    if u not in phrasebook():
+        return jsonify({"ok": False, "error": "use /chirp?u= an utterance from RIFT's talk_bf.json"}), 400
+    threading.Thread(target=chirp, args=(u,), daemon=True).start()
+    return jsonify({"ok": True})
 
 
 @app.route("/report", methods=["POST"])

@@ -39,6 +39,15 @@ async function refreshNow() {
     $('out-wind').textContent = o.wind_kmh === null ? '--' : `${Math.round(o.wind_kmh)} km/h`;
     $('out-range').textContent = `${deg(o.low)}–${deg(o.high)}${unit()}`;
     $('out-rain').textContent = o.rain_chance === null ? '--' : `${Math.round(o.rain_chance)}% chance`;
+    $('out-sunrise').textContent = o.sunrise ? o.sunrise.slice(-5) : '--';
+    $('out-sunset').textContent = o.sunset ? o.sunset.slice(-5) : '--';
+    $('out-uv').textContent = o.uv === null || o.uv === undefined ? '--' : Math.round(o.uv);
+  }
+  if (d.moon) {
+    $('moon-icon').textContent = d.moon.icon;
+    $('moon-phase').textContent = `${d.moon.phase} moon`;
+    $('moon-more').textContent = d.moon.phase === 'full' ? `${d.moon.lit}% lit: full tonight`
+      : `${d.moon.lit}% lit · full in ${Math.round(d.moon.days_to_full)} days`;
   }
   const names = Object.keys(d.inside || {}).sort((a, b) => (a === 'AURA' ? -1 : b === 'AURA' ? 1 : a.localeCompare(b)));
   if (names.length) {
@@ -131,6 +140,17 @@ document.querySelectorAll('.toggles button').forEach(b => b.addEventListener('cl
   document.querySelectorAll(`.toggles button${group}`).forEach(o => o.classList.toggle('on', o === b));
 }));
 window.addEventListener('resize', draw);
+
+$('story-btn').addEventListener('click', async () => {
+  const b = $('story-btn');
+  b.disabled = true;
+  $('story').textContent = 'Looking at the sky...';
+  try {
+    const d = await (await fetch('/story')).json();
+    $('story').textContent = d.story || d.error;
+  } catch { $('story').textContent = "The storyteller didn't answer."; }
+  b.disabled = false;
+});
 
 colour('AURA');
 refreshNow();

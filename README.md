@@ -45,6 +45,10 @@ The fleet's weather station. AURA knows what it's like outside, what it's like i
 - **Her own sensor:** an AHT10 temperature and humidity sensor on an Arduino over USB (`scripts/aura_sensor`), the same sensor and code as MILA's.
 - **The fleet:** every robot that already reports temperature and humidity: MILA (`/status`), NORA (`/sensors`), and anything else with `temp` / `hum` in its status. She finds them in RIFT's fleet list and asks them every minute, over WiFi, or over Bluetooth for a robot you list in `Bluetooth`. A robot can also push its reading: `POST /report`.
 - **The graph:** inside against outside (outside dashed), temperature or humidity, over 6 hours, 24 hours or 7 days. One reading a minute per source is kept for 7 days in `data/history.csv`.
+- **The sky:** sunrise, sunset and the UV index (Open-Meteo), and the moon's phase, worked out on the PC (no internet needed): how lit it is and the days to the next full moon.
+- **Obsessed with the weather:** she has NINA's storyteller (Karpathy's 15M TinyStories model, NumPy only, no GPU) and every story is about the weather: she opens it with the real sky ("Today there was light rain and it was cold...") and the little model tells the rest. **Tell me a weather story** on her page, or `GET /story`. Ask her anything and she brings it back to the weather.
+- **Ask her:** `GET /ask?q=...`: the weather, a robot's readings ("how warm is it at MILA?"), the moon, sunrise and sunset, or a story. DREAM asks her this way.
+- **Brainfuck, like the fleet:** she registers `talk:5017`, so RIFT's conversations include her (`/chirp?u=`, beeped on the PC speaker in her light voice). When DREAM asks for the weather, DREAM beeps "wx?" (utterance 17) first and AURA beeps the sky back in one word: sun, cloud, rain, fog, snow, storm, hot or cold (18-25, RIFT's `Fleet/talk_bf.json`). Then DREAM says AURA's answer in words.
 - **In her own words:** "It's 27° and mostly clear outside, a 69% chance of rain today, so take an umbrella, 22° in here, MILA has the warmest spot at 25°."
 
 The internet she uses comes through the fleet: everything on the "RIFT" WiFi shares the hub PC's connection (RIFT's README, "The fleet network").
@@ -76,7 +80,7 @@ She finds her Arduino by herself: the port that answers `WHO` with `I am AURA`.
 | `HistoryDays`, `SampleSeconds` | `7`, `60` | How long readings are kept, and one per how many seconds per source |
 | `Bluetooth` | `{}` | Robots to read over Bluetooth instead of WiFi: `{"NORA": "COM7"}` (the port the paired robot got, or its address) |
 | `BluetoothServer` | `true` | Her own API over Bluetooth serial too (`fleet_bt.py`, RFCOMM channel 1), for controllers without WiFi |
-| `FleetLadder` | `false` | The fleet's WiFi ladder. She doesn't have a rung on it yet, so she just registers with RIFT |
+| `FleetLadder` | `false` | The fleet's WiFi ladder: her rung is after TINA (RIFT > DREAM > NINA > TINA > AURA > the controllers...). Off, like NINA's and DREAM's, she just registers with RIFT |
 
 ## API
 
@@ -84,11 +88,14 @@ She finds her Arduino by herself: the port that answers `WHO` with `I am AURA`.
 |---|---|
 | `GET /api/now` | Outside, every room's latest reading, where she is, what she says, and any problems |
 | `GET /api/history?hours=24` | Every source's readings: `[time, temp, hum]` |
+| `GET /ask?q=...` | Her answer in words, and her Brainfuck word for the sky (`chirp=1`: she beeps it too) |
+| `GET /story` | A weather story (about 10 s) |
+| `GET /chirp?u=n` | Beeps utterance n of RIFT's phrasebook, in her voice (RIFT's conversations) |
 | `GET /status` | Like any robot's: `temp`, `hum` (hers), `outside_temp`, `outside_hum`, `weather`, `says` |
 | `POST /report` | `{"name": "KIDA01", "temp": 23.1, "hum": 45}` from a robot that would rather push |
 | `GET /ping` | `AURA alive` |
 
-She registers with RIFT as `weather` with `weather,climate,web:5017`.
+She registers with RIFT as `weather` with `weather,climate,web:5017,talk:5017,ask:5017`. RIFT's **Ask & tell** shows her temperature and humidity and, from Open-Meteo, outside.
 
 Her Arduino, at 9600 baud: `TEMP:21.4` and `HUM:48.2` every 5 s, `AHT_ERROR` when the sensor doesn't answer. `WHO` answers `I am AURA`, `READ` measures now.
 
@@ -98,7 +105,7 @@ Her Arduino, at 9600 baud: `TEMP:21.4` and `HUM:48.2` every 5 s, `AHT_ERROR` whe
 venv\Scripts\python.exe -m pytest tests
 ```
 
-Readings in every robot's format, the history file, her sentences, the location and weather (no network), and the API.
+Readings in every robot's format, the history file, her sentences, the location and weather (no network), the moon, her Brainfuck word for the sky, her answers, and the API.
 
 ## Files
 
@@ -106,6 +113,7 @@ Readings in every robot's format, the history file, her sentences, the location 
 aura.py                     her server: weather, Arduino, fleet, history, page, API
 config.json                 her settings
 fleet_bt.py, fleet_ladder.py  the fleet's Bluetooth link and WiFi ladder (master copies: RIFT/Fleet)
+story.py                    the storyteller (NINA's, with weather openings); its model goes in models/
 templates/, static/         her page (HTML, CSS, JS: the graph is a plain canvas)
 scripts/aura_sensor/        the Arduino sketch (AHT10)
 scripts/web_controller/     builds/aura.exe

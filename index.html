@@ -89,6 +89,21 @@
         <p>&ldquo;It's 27&deg; and mostly clear outside, a 69% chance of rain today, so take an umbrella, 22&deg; in here.&rdquo;</p>
       </div>
       <div class="card">
+        <span class="k">Sky</span>
+        <h4>Sun and moon</h4>
+        <p>Sunrise, sunset and UV from Open-Meteo, and the moon's phase worked out on the PC: how lit it is, and the days to the next full moon.</p>
+      </div>
+      <div class="card">
+        <span class="k">Stories</span>
+        <h4>Obsessed with the weather</h4>
+        <p>NINA's little storyteller (TinyStories, 15M parameters, no GPU): she opens every story with the real sky, and it tells the rest.</p>
+      </div>
+      <div class="card">
+        <span class="k">Brainfuck</span>
+        <h4>&ldquo;wx?&rdquo; &mdash; &ldquo;rain&rdquo;</h4>
+        <p>DREAM asks for the weather in Brainfuck and AURA beeps the sky back in one word, then DREAM says the whole answer. She joins RIFT's conversations too.</p>
+      </div>
+      <div class="card">
         <span class="k">Internet</span>
         <h4>Through the fleet</h4>
         <p>Everything on the RIFT WiFi shares the hub PC's connection, so she needs no dongle of her own.</p>
@@ -120,6 +135,8 @@ http://127.0.0.1:5017/</pre>
         <tbody>
           <tr><td><code>GET /api/now</code></td><td>Outside, every room, where she is and what she says</td></tr>
           <tr><td><code>GET /api/history?hours=24</code></td><td>Every source's readings over time</td></tr>
+          <tr><td><code>GET /ask?q=...</code></td><td>The weather, a robot's readings, the moon, a story: in words and in Brainfuck</td></tr>
+          <tr><td><code>GET /story</code></td><td>A weather story</td></tr>
           <tr><td><code>GET /status</code></td><td>Like any robot's: her <code>temp</code> and <code>hum</code>, and outside's</td></tr>
           <tr><td><code>POST /report</code></td><td><code>{"name": "KIDA01", "temp": 23.1, "hum": 45}</code> from a robot that would rather push</td></tr>
         </tbody>

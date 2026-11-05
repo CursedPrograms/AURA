@@ -7,3 +7,4 @@ data/
 # The exe is built and kept
 !builds/
 !builds/*.exe
+models/

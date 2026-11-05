@@ -36,6 +36,18 @@ h2 { font: 600 13px var(--mono); letter-spacing: 2px; text-transform: uppercase;
 .facts dt { color: var(--sub); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
 .facts dd { margin: 0; font-family: var(--mono); }
 
+.sky { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 12px; margin-top: 12px; }
+.moon, .story { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.moon { display: flex; align-items: center; gap: 14px; }
+.moon-icon { font-size: 44px; line-height: 1; }
+.moon-phase { font-size: 18px; text-transform: capitalize; }
+.story button {
+  background: var(--panel); color: var(--sky); border: 1px solid var(--sky); border-radius: 8px;
+  padding: 7px 14px; font: 14px var(--sans); cursor: pointer;
+}
+.story button:disabled { opacity: .5; cursor: wait; }
+.story p { margin: 10px 0 0; white-space: pre-line; }
+
 .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .room { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; border-left: 4px solid var(--c, var(--sky)); }
 .room .who { font: 600 14px var(--mono); letter-spacing: 1px; }
@@ -62,6 +74,7 @@ canvas { width: 100%; margin-top: 12px; background: var(--panel); border: 1px so
 .problems li::before { content: "⚠ "; }
 
 @media (max-width: 560px) {
+  .sky { grid-template-columns: 1fr; }
   .outside { grid-template-columns: 1fr; }
   .outside .big { grid-row: auto; font-size: 60px; }
 }

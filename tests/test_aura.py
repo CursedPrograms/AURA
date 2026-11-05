@@ -98,3 +98,36 @@ def test_api(monkeypatch, tmp_path):
     assert "KIDA01" in c.get("/api/history?hours=1").get_json()["series"]
     assert c.get("/status").get_json()["name"] == "AURA"
     assert c.get("/").status_code == 200
+
+
+def test_moon():
+    full = aura.moon(aura.NEW_MOON_TS + aura.SYNODIC_DAYS / 2 * 86400)
+    assert full["phase"] == "full" and full["lit"] == 100
+    new = aura.moon(aura.NEW_MOON_TS + 3 * aura.SYNODIC_DAYS * 86400)
+    assert new["phase"] == "new" and new["lit"] == 0
+    assert aura.moon(aura.NEW_MOON_TS + 7.4 * 86400)["phase"] == "first quarter"
+
+
+def test_weather_word_and_phrasebook():
+    assert aura.weather_word({"code": 95, "temp": 20}) == "stormy"
+    assert aura.weather_word({"code": 63, "temp": 20}) == "rainy"
+    assert aura.weather_word({"code": 0, "temp": 33}) == "hot"
+    assert aura.weather_word({"code": 3, "temp": 5}) == "cold"
+    assert aura.weather_word({"code": 2, "temp": 20}) == "cloudy"
+    book = aura.phrasebook()                       # RIFT's talk_bf.json, next to this repo
+    assert book[17]["text"] == "wx?" and book[aura.WX_ANSWERS["rainy"]]["text"] == "rain"
+
+
+def test_answer(monkeypatch):
+    monkeypatch.setitem(aura.STATE, "weather", {"temp": 12.0, "words": "light rain", "code": 61, "rain_chance": 10,
+                                                "sunrise": "2026-11-05T05:20", "sunset": "2026-11-05T18:41"})
+    monkeypatch.setattr(aura, "snapshot", lambda max_age_s=600: {"MILA": {"temp": 24.0, "hum": 40.0, "ts": 0}})
+    a = aura.answer("how warm is it at mila?")
+    assert a["about"] == "MILA" and "MILA reads 24°" in a["answer"] and "light rain" in a["answer"]
+    assert a["bf"] == {"u": 20, "text": "rain"}
+    assert "rises at 05:20" in aura.answer("when is sunrise")["answer"]
+    assert "moon is" in aura.answer("what's the moon doing")["answer"]
+    assert "12° and light rain outside" in aura.answer("what's the weather")["answer"]
+    c = aura.app.test_client()
+    assert c.get("/chirp?u=99").status_code == 400
+    assert c.get("/ask?q=weather").get_json()["bf"]["text"] == "rain"
