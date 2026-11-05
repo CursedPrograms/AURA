@@ -44,7 +44,8 @@ The fleet's weather station. AURA knows what it's like outside, what it's like i
 - **Outside:** the current weather where you are, from [Open-Meteo](https://open-meteo.com/) (open source, free, no API key): temperature, feels-like, humidity, wind, today's high and low, and the chance of rain. It's refreshed every 10 minutes.
 - **Her own sensor:** an AHT10 temperature and humidity sensor on an Arduino over USB (`scripts/aura_sensor`), the same sensor and code as MILA's.
 - **The fleet:** every robot that already reports temperature and humidity: MILA (`/status`), NORA (`/sensors`), and anything else with `temp` / `hum` in its status. She finds them in RIFT's fleet list and asks them every minute, over WiFi, or over Bluetooth for a robot you list in `Bluetooth`. A robot can also push its reading: `POST /report`.
-- **The graph:** inside against outside (outside dashed), temperature or humidity, over 6 hours, 24 hours or 7 days. One reading a minute per source is kept for 7 days in `data/history.csv`.
+- **The graph:** inside against outside (outside dashed), temperature or humidity, over 6 hours, 24 hours or 7 days. One reading a minute per source is kept for 7 days in `data/history.csv` and read back when she starts, so the graph carries on from last time (a gap where she was off).
+- **What's coming:** the next 6 hours, hour by hour: when rain looks likely (60 % or more, or it's in the forecast) and when a thunderstorm is forecast. **Air:** air quality (US AQI, PM2.5) and pollen from Open-Meteo's free air-quality service, every 30 minutes (pollen is only measured in Europe). DREAM uses all of this to mention the weather now and then, the way a person would.
 - **The sky:** sunrise, sunset and the UV index (Open-Meteo), and the moon's phase, worked out on the PC (no internet needed): how lit it is and the days to the next full moon.
 - **Obsessed with the weather:** she has NINA's storyteller (Karpathy's 15M TinyStories model, NumPy only, no GPU) and every story is about the weather: she opens it with the real sky ("Today there was light rain and it was cold...") and the little model tells the rest. **Tell me a weather story** on her page, or `GET /story`. Ask her anything and she brings it back to the weather.
 - **Ask her:** `GET /ask?q=...`: the weather, a robot's readings ("how warm is it at MILA?"), the moon, sunrise and sunset, or a story. DREAM asks her this way.
@@ -86,7 +87,7 @@ She finds her Arduino by herself: the port that answers `WHO` with `I am AURA`.
 
 | Request | Answer |
 |---|---|
-| `GET /api/now` | Outside, every room's latest reading, where she is, what she says, and any problems |
+| `GET /api/now` | Outside (with `soon`: rain and storms in the next 6 hours), the air, the moon, every room's latest reading, where she is, what she says, and any problems |
 | `GET /api/history?hours=24` | Every source's readings: `[time, temp, hum]` |
 | `GET /ask?q=...` | Her answer in words, and her Brainfuck word for the sky (`chirp=1`: she beeps it too) |
 | `GET /story` | A weather story (about 10 s) |

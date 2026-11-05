@@ -131,3 +131,21 @@ def test_answer(monkeypatch):
     c = aura.app.test_client()
     assert c.get("/chirp?u=99").status_code == 400
     assert c.get("/ask?q=weather").get_json()["bf"]["text"] == "rain"
+
+
+def test_coming_and_air():
+    hourly = {"time": [f"2026-11-05T{h:02d}:00" for h in range(13, 20)],
+              "precipitation_probability": [10, 20, 30, 70, 80, 40, 10],
+              "weather_code": [1, 2, 3, 61, 95, 3, 1]}
+    assert aura.coming(hourly) == {"rain_at": "16:00", "rain_chance": 70.0, "storm_at": "17:00"}
+    assert aura.coming({}) == {"rain_at": None, "rain_chance": None, "storm_at": None}
+    air = {"current": {"us_aqi": 130, "pm2_5": 40, "grass_pollen": 80, "birch_pollen": None, "ragweed_pollen": 2}}
+    a = aura.fetch_air({"lat": 1, "lon": 2}, get=lambda url, **kw: Resp(air))
+    assert a["words"] == "unhealthy for sensitive people" and a["pollen_high"] == ["grass"]
+
+
+def test_says_mentions_whats_coming(monkeypatch):
+    monkeypatch.setitem(aura.STATE, "air", {"aqi": 160, "words": "unhealthy", "pollen_high": []})
+    w = {"temp": 22.0, "words": "partly cloudy", "rain_chance": 30, "soon": {"rain_at": "16:00", "storm_at": None}}
+    line = aura.says({}, w)
+    assert "rain around 16:00" in line and "the air is unhealthy today" in line

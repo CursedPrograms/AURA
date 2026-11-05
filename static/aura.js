@@ -42,6 +42,11 @@ async function refreshNow() {
     $('out-sunrise').textContent = o.sunrise ? o.sunrise.slice(-5) : '--';
     $('out-sunset').textContent = o.sunset ? o.sunset.slice(-5) : '--';
     $('out-uv').textContent = o.uv === null || o.uv === undefined ? '--' : Math.round(o.uv);
+    const soon = o.soon || {};
+    $('out-soon').textContent = soon.storm_at ? `storm ~${soon.storm_at}` : soon.rain_at ? `rain ~${soon.rain_at}` : 'dry for now';
+  }
+  if (d.air && d.air.aqi !== null) {
+    $('out-air').textContent = `${d.air.words} (${Math.round(d.air.aqi)})` + ((d.air.pollen_high || []).length ? `, ${d.air.pollen_high.join(' + ')} pollen` : '');
   }
   if (d.moon) {
     $('moon-icon').textContent = d.moon.icon;

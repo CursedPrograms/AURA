@@ -180,7 +180,7 @@ class History:
 HISTORY = History(HISTORY_CSV, CFG["HistoryDays"], CFG["SampleSeconds"])
 NOW = {}                          # source -> {"temp", "hum", "ts", "via"}
 NOW_LOCK = threading.Lock()
-STATE = {"weather": None, "weather_error": None, "location": None, "board": None, "board_error": None,
+STATE = {"weather": None, "air": None, "weather_error": None, "location": None, "board": None, "board_error": None,
          "registered": False, "fleet_error": None}
 
 
@@ -241,7 +241,7 @@ def fetch_weather(loc, get=requests.get):
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,"
                    "wind_speed_10m,precipitation,is_day",
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max",
-        "forecast_days": 1})
+        "hourly": "precipitation_probability,weather_code", "forecast_hours": 7, "forecast_days": 1})
     r.raise_for_status()
     d = r.json()
     c, day = d.get("current", {}), d.get("daily", {})
@@ -253,7 +253,47 @@ def fetch_weather(loc, get=requests.get):
             "high": _num(first("temperature_2m_max")), "low": _num(first("temperature_2m_min")),
             "rain_chance": _num(first("precipitation_probability_max")),
             "sunrise": first("sunrise"), "sunset": first("sunset"), "uv": _num(first("uv_index_max")),
-            "ts": time.time()}
+            "soon": coming(d.get("hourly") or {}), "ts": time.time()}
+
+
+def coming(hourly):
+    """The next 6 hours: when rain looks likely (60 % or more, or it's already in the forecast code),
+    and when a thunderstorm is forecast. {"rain_at": "16:00", "rain_chance": 70, "storm_at": None}"""
+    out = {"rain_at": None, "rain_chance": None, "storm_at": None}
+    times = hourly.get("time") or []
+    probs = hourly.get("precipitation_probability") or []
+    codes = hourly.get("weather_code") or []
+    for i, t in enumerate(times[1:7], start=1):           # [0] is this hour: that's "now", not "coming"
+        p = _num(probs[i]) if i < len(probs) else None
+        c = codes[i] if i < len(codes) else None
+        rainy = c is not None and (51 <= c <= 67 or 80 <= c <= 82 or c >= 95)
+        if out["rain_at"] is None and ((p is not None and p >= 60) or rainy):
+            out["rain_at"], out["rain_chance"] = t[-5:], p
+        if out["storm_at"] is None and c is not None and c >= 95:
+            out["storm_at"] = t[-5:]
+    return out
+
+
+def fetch_air(loc, get=requests.get):
+    """Air quality (US AQI, PM2.5) and pollen from Open-Meteo's air-quality service. Pollen is only
+    measured in Europe: elsewhere it stays None."""
+    r = get("https://air-quality-api.open-meteo.com/v1/air-quality", timeout=10, headers=UA, params={
+        "latitude": loc["lat"], "longitude": loc["lon"], "timezone": "auto",
+        "current": "us_aqi,pm2_5,grass_pollen,birch_pollen,ragweed_pollen"})
+    r.raise_for_status()
+    c = r.json().get("current", {})
+    pollen = {k: _num(c.get(k + "_pollen")) for k in ("grass", "birch", "ragweed")}
+    pollen = {k: v for k, v in pollen.items() if v is not None}
+    aqi = _num(c.get("us_aqi"))
+    return {"aqi": aqi, "pm2_5": _num(c.get("pm2_5")), "pollen": pollen or None,
+            "words": air_words(aqi), "pollen_high": [k for k, v in pollen.items() if v >= 50], "ts": time.time()}
+
+
+def air_words(aqi):
+    if aqi is None:
+        return None
+    return ("good" if aqi <= 50 else "moderate" if aqi <= 100 else "unhealthy for sensitive people" if aqi <= 150
+            else "unhealthy" if aqi <= 200 else "very unhealthy")
 
 
 def weather_loop():
@@ -263,6 +303,11 @@ def weather_loop():
                 STATE["location"] = resolve_location()
             STATE["weather"] = fetch_weather(STATE["location"])
             STATE["weather_error"] = None
+            if time.time() - (STATE.get("air") or {}).get("ts", 0) > 1800:
+                try:
+                    STATE["air"] = fetch_air(STATE["location"])
+                except Exception:
+                    pass            # the weather matters more: no air quality this round
             w = STATE["weather"]
             note_reading("Outside", w["temp"], w["hum"], "open-meteo")
             time.sleep(CFG["WeatherMinutes"] * 60)
@@ -431,6 +476,16 @@ def says(now=None, weather=None):
         bits.append(f"It's {fmt(weather['temp'])} and {weather['words']} outside")
         if weather.get("rain_chance") and weather["rain_chance"] >= 60:
             bits.append(f"a {weather['rain_chance']:.0f}% chance of rain today, so take an umbrella")
+    soon = (weather or {}).get("soon") or {}
+    if soon.get("storm_at"):
+        bits.append(f"a storm is coming around {soon['storm_at']}")
+    elif soon.get("rain_at") and not (weather or {}).get("words", "").endswith("rain"):
+        bits.append(f"rain around {soon['rain_at']}")
+    air = STATE.get("air") or {}
+    if air.get("aqi") is not None and air["aqi"] > 100:
+        bits.append(f"the air is {air['words']} today")
+    if air.get("pollen_high"):
+        bits.append(f"lots of {' and '.join(air['pollen_high'])} pollen about")
     mine = now.get(NAME)
     if mine and mine.get("temp") is not None:
         bits.append(f"{fmt(mine['temp'])} in here")
@@ -590,7 +645,7 @@ def api_now():
     now = snapshot()
     now.pop("Outside", None)
     return jsonify({"outside": STATE["weather"], "location": STATE["location"], "inside": now,
-                    "says": says(), "units": CFG.get("Units", "C"), "moon": moon(),
+                    "says": says(), "units": CFG.get("Units", "C"), "moon": moon(), "air": STATE.get("air"),
                     "sky_word": weather_word(STATE["weather"]),
                     "problems": [p for p in (STATE["weather_error"] and f"Weather: {STATE['weather_error']}",
                                              STATE["board_error"], STATE["fleet_error"]) if p]})
