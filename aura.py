@@ -1434,7 +1434,19 @@ def report():
     return jsonify({"ok": True})
 
 
+def already_running():
+    """Another AURA already answering on her port (the exe may start run.bat while she's busy): a second
+    copy would only hang beside it, so this one bows out."""
+    try:
+        return requests.get(f"http://127.0.0.1:{PORT}/ping", timeout=3).text.startswith(NAME)
+    except requests.RequestException:
+        return False
+
+
 def main():
+    if already_running():
+        print(f"[{NAME}] I'm already running: http://127.0.0.1:{PORT}/")
+        return
     for fn in (weather_loop, board_loop, fleet_loop, heartbeat):
         threading.Thread(target=fn, daemon=True, name=fn.__name__).start()
     if LADDER:
