@@ -628,6 +628,87 @@ def snapshot(max_age_s=600):
         return {k: dict(v) for k, v in NOW.items() if v["ts"] >= cut}
 
 
+# ── Europe only: pollen, ammonia, lightning (Open-Meteo has them from European models) ────────
+POLLENS = ("alder", "birch", "grass", "mugwort", "olive", "ragweed")
+EU_AQI = ("european_aqi", "european_aqi_pm2_5", "european_aqi_pm10", "european_aqi_nitrogen_dioxide",
+          "european_aqi_ozone", "european_aqi_sulphur_dioxide")
+_europe_cache = {}               # (lat, lon) -> (when, answer)
+EUROPE_CACHE_S = 1800
+
+
+def pollen_level(grains):
+    """Grains per m³ in words (a rough scale across the six kinds)."""
+    if grains is None:
+        return None
+    return ("none" if grains < 1 else "low" if grains < 10 else "moderate" if grains < 50
+            else "high" if grains < 200 else "very high")
+
+
+def lightning_level(lpi):
+    """The lightning potential index (J/kg): 0 is none."""
+    if lpi is None:
+        return None
+    return "none" if lpi <= 0.05 else "possible" if lpi < 2 else "likely"
+
+
+def eu_aqi_words(v):
+    if v is None:
+        return None
+    return ("good" if v <= 20 else "fair" if v <= 40 else "moderate" if v <= 60 else "poor" if v <= 80
+            else "very poor" if v <= 100 else "extremely poor")
+
+
+def fetch_europe(lat, lon, get=requests.get):
+    """Pollen (now and the next 24 h), ammonia and the European AQI from the air-quality service, and the
+    lightning potential for the next 12 h from the forecast. Outside Europe the European-only values are None,
+    and "in_europe" says so."""
+    key = (round(lat, 2), round(lon, 2))
+    hit = _europe_cache.get(key)
+    if hit and time.time() - hit[0] < EUROPE_CACHE_S:
+        return hit[1]
+    aq = get("https://air-quality-api.open-meteo.com/v1/air-quality", timeout=15, headers=UA, params={
+        "latitude": lat, "longitude": lon, "timezone": "auto",
+        "current": ",".join([f"{k}_pollen" for k in POLLENS] + list(EU_AQI) + ["ammonia", "dust"]),
+        "hourly": ",".join(f"{k}_pollen" for k in POLLENS), "forecast_hours": 24})
+    aq.raise_for_status()
+    a = aq.json()
+    cur, hourly = a.get("current", {}), a.get("hourly", {})
+    fc = get("https://api.open-meteo.com/v1/forecast", timeout=15, headers=UA, params={
+        "latitude": lat, "longitude": lon, "timezone": "auto", "hourly": "lightning_potential", "forecast_hours": 12})
+    fc.raise_for_status()
+    f = fc.json().get("hourly", {})
+    lpi = [_num(x) for x in f.get("lightning_potential") or []]
+    pollen = {}
+    for k in POLLENS:
+        now = _num(cur.get(f"{k}_pollen"))
+        ahead = [_num(x) for x in hourly.get(f"{k}_pollen") or []]
+        peak = max((x for x in ahead if x is not None), default=None)
+        pollen[k] = {"now": now, "level": pollen_level(now), "peak_24h": peak, "peak_level": pollen_level(peak),
+                     "hours": [[t[-5:], v] for t, v in zip(hourly.get("time") or [], ahead)]}
+    lpi_known = [x for x in lpi if x is not None]
+    answer = {
+        "in_europe": any(p["now"] is not None for p in pollen.values()) or bool(lpi_known),
+        "pollen": pollen,
+        "ammonia_ugm3": _num(cur.get("ammonia")), "dust_ugm3": _num(cur.get("dust")),
+        "european_aqi": {k.replace("european_aqi_", "").replace("european_aqi", "overall"): _num(cur.get(k)) for k in EU_AQI},
+        "european_aqi_words": eu_aqi_words(_num(cur.get("european_aqi"))),
+        "lightning": {"now": lpi_known[0] if lpi_known else None, "max_12h": max(lpi_known) if lpi_known else None,
+                      "level": lightning_level(max(lpi_known)) if lpi_known else None,
+                      "hours": [[t[-5:], v] for t, v in zip(f.get("time") or [], lpi)]},
+        "ts": time.time()}
+    _europe_cache[key] = (time.time(), answer)
+    return answer
+
+
+def geocode(city, get=requests.get):
+    r = get("https://geocoding-api.open-meteo.com/v1/search", params={"name": city, "count": 1}, timeout=10, headers=UA)
+    hit = (r.json().get("results") or [None])[0]
+    if not hit:
+        return None
+    return {"lat": hit["latitude"], "lon": hit["longitude"],
+            "name": ", ".join(x for x in (hit.get("name"), hit.get("country")) if x)}
+
+
 # ── The moon (no internet needed: days since a known new moon) ─────────────────────────────────
 SYNODIC_DAYS = 29.530588853
 NEW_MOON_TS = 947182440          # 2000-01-06 18:14 UTC
@@ -803,6 +884,24 @@ app = Flask(__name__)
 @app.route("/")
 def page():
     return render_template("index.html", name=NAME, port=PORT)
+
+
+@app.route("/europe")
+def europe_page():
+    return render_template("europe.html", name=NAME)
+
+
+@app.route("/api/europe")
+def api_europe():
+    """GET /api/europe (her own location) or ?city=Berlin: pollen, ammonia, lightning, the European AQI."""
+    city = (request.args.get("city") or "").strip()[:60]
+    try:
+        loc = geocode(city) if city else (STATE["location"] or resolve_location())
+        if not loc:
+            return jsonify({"error": f"I couldn't find {city}."}), 404
+        return jsonify(dict(fetch_europe(loc["lat"], loc["lon"]), where=loc.get("name"), mine=not city))
+    except Exception as e:
+        return jsonify({"error": f"Open-Meteo didn't answer ({type(e).__name__})."}), 502
 
 
 @app.route("/ping")

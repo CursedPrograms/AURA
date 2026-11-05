@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ name }} · Europe</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/aura.css">
+<link rel="stylesheet" href="/static/europe.css">
+<script src="/static/europe.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="brand"><img class="face" src="/static/avatar_round.png" alt="" width="40" height="40">{{ name }}</div>
+  <nav class="links"><a href="/">The weather</a></nav>
+  <div class="where" id="where">Europe</div>
+</header>
+
+<main>
+  <p class="says">What Open-Meteo only knows for Europe: pollen, ammonia and lightning. The European air quality index is here too (that one works everywhere).</p>
+
+  <form class="city" id="city-form">
+    <input id="city" placeholder="A European city, e.g. Berlin" autocomplete="off">
+    <button type="submit">Look</button>
+    <button type="button" id="home">Where I am</button>
+  </form>
+  <p class="note" id="note"></p>
+
+  <section>
+    <h2>Pollen</h2>
+    <div class="pollen" id="pollen"></div>
+    <p class="muted small">Grains per m³ now, and the highest in the next 24 hours. None under 1, low under 10, moderate under 50, high under 200, then very high.</p>
+  </section>
+
+  <section>
+    <h2>Lightning</h2>
+    <div class="row" id="lightning"></div>
+    <p class="muted small">The lightning potential index (J/kg) for the next 12 hours, from DWD's ICON model: central Europe only.</p>
+  </section>
+
+  <section>
+    <h2>European air quality</h2>
+    <div class="row" id="eaqi"></div>
+    <p class="muted small">0-20 good, 20-40 fair, 40-60 moderate, 60-80 poor, 80-100 very poor, above that extremely poor. Ammonia (farming) is Europe only.</p>
+  </section>
+</main>
+</body>
+</html>

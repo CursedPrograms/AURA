@@ -195,3 +195,21 @@ def test_answers_about_the_details(monkeypatch):
     assert "The days are getting longer" in aura.answer("are the days getting longer?")["answer"]
     assert aura.answer("will it snow")["answer"].startswith("No snow")
     assert "Wear sunscreen" in aura.answer("do I need sunscreen")["answer"]
+
+
+def test_europe(monkeypatch):
+    aura._europe_cache.clear()
+    aq = {"current": {"birch_pollen": 60, "grass_pollen": 4, "alder_pollen": 0, "mugwort_pollen": 0, "olive_pollen": 0,
+                      "ragweed_pollen": 0, "european_aqi": 31, "european_aqi_pm2_5": 31, "ammonia": 1.6},
+          "hourly": {"time": ["2026-11-05T13:00", "2026-11-05T14:00"], "birch_pollen": [60, 250], "grass_pollen": [4, 3]}}
+    fc = {"hourly": {"time": ["2026-11-05T13:00", "2026-11-05T14:00"], "lightning_potential": [0.0, 3.1]}}
+    get = lambda url, **kw: Resp(aq if "air-quality" in url else fc)
+    d = aura.fetch_europe(52.5, 13.4, get=get)
+    assert d["in_europe"] and d["pollen"]["birch"]["level"] == "high" and d["pollen"]["birch"]["peak_level"] == "very high"
+    assert d["pollen"]["grass"]["level"] == "low" and d["lightning"]["level"] == "likely"
+    assert d["european_aqi"]["overall"] == 31 and d["european_aqi_words"] == "fair" and d["ammonia_ugm3"] == 1.6
+    aura._europe_cache.clear()
+    none = {"current": {"european_aqi": 71}, "hourly": {}}
+    far = aura.fetch_europe(-26.2, 28.0, get=lambda url, **kw: Resp(none if "air-quality" in url else {"hourly": {}}))
+    assert not far["in_europe"] and far["pollen"]["birch"]["now"] is None
+    assert aura.app.test_client().get("/europe").status_code == 200

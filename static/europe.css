@@ -1,0 +1,26 @@
+/* AURA's Europe page: pollen, lightning and the European AQI (shares aura.css). */
+.city { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; }
+.city input {
+  flex: 1 1 220px; background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; font: 15px var(--sans);
+}
+.city button {
+  background: var(--panel); color: var(--sky); border: 1px solid var(--sky); border-radius: 8px;
+  padding: 8px 14px; font: 14px var(--sans); cursor: pointer;
+}
+.note { color: var(--sun); min-height: 1.2em; margin: 4px 0 0; }
+.small { font-size: 13px; margin-top: 8px; }
+
+.pollen, .row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.tile .k { color: var(--sub); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.tile .v { font-family: var(--mono); font-size: 18px; margin-top: 2px; }
+.tile .w { font-size: 13px; text-transform: capitalize; }
+.tile.none .w { color: var(--sub); }
+.tile.low .w { color: #8EDB9C; }
+.tile.moderate .w, .tile.fair .w, .tile.possible .w { color: #F2D65E; }
+.tile.high .w, .tile.poor .w, .tile.likely .w { color: var(--sun); }
+.tile.very-high .w, .tile.very-poor .w, .tile.extremely-poor .w { color: #F27E7E; }
+.tile .peak { color: var(--sub); font-size: 12px; margin-top: 2px; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 34px; margin-top: 8px; }
+.bars span { flex: 1; background: var(--sky); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .8; }

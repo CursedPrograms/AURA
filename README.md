@@ -29,7 +29,7 @@
 - Robot Type: Weather station (a PC program with her own Arduino sensor)
 
 <div align="center">
-  <img src="images/aura_avatar.png" alt="AURA: a sun behind a cloud" width="320"/>
+  <img src="images/aura_avatar.jpg" alt="AURA avatar: a woman with long auburn hair in a denim jumpsuit, among clouds, rainbows, the sun and a weather satellite" width="320"/>
   <p><i>AURA</i></p>
 </div>
 
@@ -54,6 +54,7 @@ The fleet's weather station. AURA knows what it's like outside, what it's like i
   - **Rain and snow in detail:** rain, showers, snowfall, snow depth, today's total and hours of rain, and the freezing level.
   - **Sun:** sunshine today, daylight and how much longer or shorter it is than yesterday, solar radiation, and UV under a clear sky.
   - **Ground:** soil temperature (surface and 6 cm) and moisture, evaporation, and how much water plants lose today (ET₀).
+- **Europe** (`/europe` on her page): what Open-Meteo only has for Europe: six pollens (alder, birch, grass, mugwort, olive, ragweed) now and over the next 24 hours, ammonia, and the lightning potential for the next 12 hours (central Europe), with the European air quality index and its parts. Outside Europe it says so, and you can look at any European city.
 - **What's coming:** the next 6 hours, hour by hour: when rain looks likely (60 % or more, or it's in the forecast) and when a thunderstorm is forecast. **Air:** air quality (US AQI, PM2.5) and pollen from Open-Meteo's free air-quality service, every 30 minutes (pollen is only measured in Europe). DREAM uses all of this to mention the weather now and then, the way a person would.
 - **The sky:** sunrise, sunset and the UV index (Open-Meteo), and the moon's phase, worked out on the PC (no internet needed): how lit it is and the days to the next full moon.
 - **Obsessed with the weather:** she has NINA's storyteller (Karpathy's 15M TinyStories model, NumPy only, no GPU) and every story is about the weather: she opens it with the real sky ("Today there was light rain and it was cold...") and the little model tells the rest. **Tell me a weather story** on her page, or `GET /story`. Ask her anything and she brings it back to the weather.
