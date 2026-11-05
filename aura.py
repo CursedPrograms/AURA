@@ -235,25 +235,108 @@ def resolve_location(cfg=CFG, get=requests.get):
     return found
 
 
+CURRENT = ("temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,"
+           "wind_gusts_10m,precipitation,rain,showers,snowfall,is_day,pressure_msl,surface_pressure,cloud_cover,"
+           "cloud_cover_low,cloud_cover_mid,cloud_cover_high,dew_point_2m,visibility,cape,lifted_index,"
+           "freezing_level_height,snow_depth,soil_temperature_0cm,soil_moisture_0_to_1cm,evapotranspiration,"
+           "shortwave_radiation,direct_radiation,diffuse_radiation,uv_index,uv_index_clear_sky,sunshine_duration")
+HOURLY = ("precipitation_probability,weather_code,pressure_msl,cape,wind_gusts_10m,cloud_cover,lightning_potential,"
+          "soil_temperature_6cm,soil_moisture_1_to_3cm")
+DAILY = ("temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max,"
+         "uv_index_clear_sky_max,precipitation_sum,rain_sum,showers_sum,snowfall_sum,precipitation_hours,"
+         "wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunshine_duration,daylight_duration,"
+         "et0_fao_evapotranspiration,shortwave_radiation_sum")
+PAST_HOURS = 3                   # the hourly list starts 3 h ago: the pressure trend
+
+
+def compass(deg):
+    if deg is None:
+        return None
+    return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][int((deg % 360) / 45 + 0.5) % 8]
+
+
+def pressure_trend(change):
+    """hPa over 3 hours, in words: a fast fall is the barometer's "storm coming"."""
+    if change is None:
+        return None
+    return ("falling fast" if change <= -3 else "falling" if change <= -1 else "rising fast" if change >= 3
+            else "rising" if change >= 1 else "steady")
+
+
+def muggy(dew):
+    """How the air feels, from the dew point (humidity alone misleads: 90 % on a cold night is dry air)."""
+    if dew is None:
+        return None
+    return ("dry" if dew < 10 else "comfortable" if dew < 16 else "a bit humid" if dew < 18
+            else "muggy" if dew < 21 else "oppressive")
+
+
+def storm_potential(cape, lifted):
+    """From CAPE (the energy the air has for storms, J/kg) and the lifted index (below 0: unstable)."""
+    if cape is None:
+        return None
+    if cape >= 1000 and (lifted is None or lifted <= -2):
+        return "high"
+    if cape >= 500 or (lifted is not None and lifted < 0):
+        return "some"
+    return "low"
+
+
 def fetch_weather(loc, get=requests.get):
+    """Everything Open-Meteo's forecast says about now, today and the next 6 hours."""
     r = get("https://api.open-meteo.com/v1/forecast", timeout=10, headers=UA, params={
         "latitude": loc["lat"], "longitude": loc["lon"], "timezone": "auto",
-        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,"
-                   "wind_speed_10m,precipitation,is_day",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max",
-        "hourly": "precipitation_probability,weather_code", "forecast_hours": 7, "forecast_days": 1})
+        "current": CURRENT, "hourly": HOURLY, "daily": DAILY,
+        "past_hours": PAST_HOURS, "forecast_hours": 7, "past_days": 1, "forecast_days": 1})
     r.raise_for_status()
     d = r.json()
-    c, day = d.get("current", {}), d.get("daily", {})
-    first = lambda k: (day.get(k) or [None])[0]
-    return {"temp": _num(c.get("temperature_2m")), "hum": _num(c.get("relative_humidity_2m")),
-            "feels": _num(c.get("apparent_temperature")), "code": c.get("weather_code"),
-            "words": describe(c.get("weather_code")), "wind_kmh": _num(c.get("wind_speed_10m")),
-            "rain_mm": _num(c.get("precipitation")), "day": bool(c.get("is_day", 1)),
-            "high": _num(first("temperature_2m_max")), "low": _num(first("temperature_2m_min")),
-            "rain_chance": _num(first("precipitation_probability_max")),
-            "sunrise": first("sunrise"), "sunset": first("sunset"), "uv": _num(first("uv_index_max")),
-            "soon": coming(d.get("hourly") or {}), "ts": time.time()}
+    c, day, hourly = d.get("current", {}), d.get("daily", {}), d.get("hourly", {})
+    today = len(day.get("time") or [None]) - 1          # [yesterday, today]
+    at = lambda k, i=today: (day.get(k) or [None] * (i + 1))[i] if len(day.get(k) or []) > i else None
+    n = lambda k: _num(c.get(k))
+    pressures = [_num(x) for x in hourly.get("pressure_msl") or []]
+    change = (round(pressures[PAST_HOURS] - pressures[0], 1)
+              if len(pressures) > PAST_HOURS and None not in (pressures[0], pressures[PAST_HOURS]) else None)
+    daylight, daylight_before = _num(at("daylight_duration")), _num(at("daylight_duration", today - 1)) if today else None
+    gusts_ahead = [_num(x) for x in (hourly.get("wind_gusts_10m") or [])[PAST_HOURS + 1:]]
+    lightning = [_num(x) for x in (hourly.get("lightning_potential") or [])[PAST_HOURS:] if _num(x) is not None]
+    later = {k: v[PAST_HOURS:] for k, v in hourly.items()}   # this hour on, for coming()
+    vis = n("visibility")
+    return {
+        "temp": n("temperature_2m"), "hum": n("relative_humidity_2m"), "feels": n("apparent_temperature"),
+        "code": c.get("weather_code"), "words": describe(c.get("weather_code")), "day": bool(c.get("is_day", 1)),
+        "wind_kmh": n("wind_speed_10m"), "gusts_kmh": n("wind_gusts_10m"), "wind_dir": compass(n("wind_direction_10m")),
+        "rain_mm": n("precipitation"),
+        "precip": {"rain_mm": n("rain"), "showers_mm": n("showers"), "snowfall_cm": n("snowfall"), "snow_depth_m": n("snow_depth")},
+        "pressure_hpa": n("pressure_msl"), "surface_pressure_hpa": n("surface_pressure"),
+        "pressure_change_3h": change, "pressure_trend": pressure_trend(change),
+        "clouds": {"total": n("cloud_cover"), "low": n("cloud_cover_low"), "mid": n("cloud_cover_mid"), "high": n("cloud_cover_high")},
+        "visibility_km": round(vis / 1000, 1) if vis is not None else None, "fog": vis is not None and vis < 1000,
+        "dew_point": n("dew_point_2m"), "feel_of_air": muggy(n("dew_point_2m")),
+        "cape": n("cape"), "lifted_index": n("lifted_index"), "storm_potential": storm_potential(n("cape"), n("lifted_index")),
+        "lightning": max(lightning) if lightning else None,
+        "freezing_level_m": n("freezing_level_height"),
+        "sun": {"radiation_wm2": n("shortwave_radiation"), "direct_wm2": n("direct_radiation"), "diffuse_wm2": n("diffuse_radiation"),
+                "uv": n("uv_index"), "uv_clear_sky": n("uv_index_clear_sky"),
+                "sunshine_h_today": round(_num(at("sunshine_duration")) / 3600, 1) if _num(at("sunshine_duration")) is not None else None,
+                "daylight_h": round(daylight / 3600, 2) if daylight is not None else None,
+                "daylight_change_min": round((daylight - daylight_before) / 60, 1) if None not in (daylight, daylight_before) else None,
+                "radiation_today_mj": _num(at("shortwave_radiation_sum"))},
+        "ground": {"soil_temp_surface": n("soil_temperature_0cm"),
+                   "soil_temp_6cm": _num((hourly.get("soil_temperature_6cm") or [None] * (PAST_HOURS + 1))[PAST_HOURS]) if len(hourly.get("soil_temperature_6cm") or []) > PAST_HOURS else None,
+                   "soil_moisture_top": n("soil_moisture_0_to_1cm"),
+                   "soil_moisture_1_3cm": _num((hourly.get("soil_moisture_1_to_3cm") or [None] * (PAST_HOURS + 1))[PAST_HOURS]) if len(hourly.get("soil_moisture_1_to_3cm") or []) > PAST_HOURS else None,
+                   "evapotranspiration_mm": n("evapotranspiration"), "et0_today_mm": _num(at("et0_fao_evapotranspiration"))},
+        "today_summary": {"precip_mm": _num(at("precipitation_sum")), "rain_mm": _num(at("rain_sum")),
+                          "showers_mm": _num(at("showers_sum")), "snowfall_cm": _num(at("snowfall_sum")),
+                          "precip_hours": _num(at("precipitation_hours")), "wind_max_kmh": _num(at("wind_speed_10m_max")),
+                          "gust_max_kmh": _num(at("wind_gusts_10m_max")), "wind_dir": compass(_num(at("wind_direction_10m_dominant")))},
+        "high": _num(at("temperature_2m_max")), "low": _num(at("temperature_2m_min")),
+        "rain_chance": _num(at("precipitation_probability_max")),
+        "sunrise": at("sunrise"), "sunset": at("sunset"), "uv": _num(at("uv_index_max")),
+        "soon": dict(coming(later), gusty_at=next((later["time"][i + 1][-5:] for i, g in enumerate(gusts_ahead)
+                                                   if g is not None and g >= 50 and i + 1 < len(later.get("time", []))), None)),
+        "ts": time.time()}
 
 
 def coming(hourly):
@@ -481,6 +564,7 @@ def says(now=None, weather=None):
         bits.append(f"a storm is coming around {soon['storm_at']}")
     elif soon.get("rain_at") and not (weather or {}).get("words", "").endswith("rain"):
         bits.append(f"rain around {soon['rain_at']}")
+    bits += extras(weather)[:2]
     air = STATE.get("air") or {}
     if air.get("aqi") is not None and air["aqi"] > 100:
         bits.append(f"the air is {air['words']} today")
@@ -507,6 +591,35 @@ def says(now=None, weather=None):
         return "I'm still gathering the weather. Give me a minute."
     line = bits[0] + "".join(", " + b for b in bits[1:])
     return re.sub(r",\s*and", " and", line) + "."
+
+
+def extras(w, hour=None):
+    """What else is worth a word, most important first: the barometer, storm energy, gusts, fog,
+    how the air feels, frost, and a clear night for the stars."""
+    if not w:
+        return []
+    hour = time.localtime().tm_hour if hour is None else hour
+    out = []
+    if w.get("pressure_trend") == "falling fast":
+        out.append("the pressure's dropping fast")
+    if w.get("storm_potential") == "high" and not (w.get("soon") or {}).get("storm_at"):
+        out.append("the air has the energy for a thunderstorm later")
+    gust = w.get("gusts_kmh")
+    if gust is not None and gust >= 50:
+        out.append(f"gusts up to {gust:.0f} km/h")
+    elif (w.get("soon") or {}).get("gusty_at"):
+        out.append(f"gusty from about {w['soon']['gusty_at']}")
+    if w.get("fog"):
+        out.append(f"foggy, only {w.get('visibility_km')} km of visibility")
+    if w.get("feel_of_air") in ("muggy", "oppressive"):
+        out.append(f"it feels {w['feel_of_air']}")
+    if w.get("temp") is not None and w["temp"] <= 2 or ((w.get("ground") or {}).get("soil_temp_surface") or 99) <= 0:
+        out.append("frost is possible")
+    clouds = (w.get("clouds") or {}).get("total")
+    m = moon()
+    if (hour >= 18 or hour < 4) and clouds is not None and clouds < 25:
+        out.append("a clear night for the stars" + (" and a full moon" if m["phase"] == "full" else ""))
+    return out
 
 
 def snapshot(max_age_s=600):
@@ -610,6 +723,63 @@ def answer(q):
             " It's full tonight!" if m["phase"] == "full" else f" Full moon in {m['days_to_full']:.0f} days.") + sky
     elif "sun" in low and ("rise" in low or "set" in low) and w and w.get("sunrise"):
         text = f"The sun rises at {w['sunrise'][-5:]} and sets at {w['sunset'][-5:]}." + sky
+    elif w and re.search(r"pressure|barometer", low):
+        text = (f"The pressure is {w.get('pressure_hpa'):.0f} hPa and {w.get('pressure_trend')}"
+                f" ({w.get('pressure_change_3h'):+.1f} in 3 hours)." if w.get("pressure_hpa") is not None else "I don't know the pressure yet.")
+        if w.get("pressure_trend") == "falling fast":
+            text += " That usually means a storm's on its way."
+    elif w and re.search(r"\b(wind|windy|gust|gusts|gusty)\b", low):
+        t = w.get("today_summary") or {}
+        text = (f"Wind {w.get('wind_kmh') or 0:.0f} km/h from the {w.get('wind_dir') or '?'}, gusting to {w.get('gusts_kmh') or 0:.0f}."
+                f" Today's strongest gust: {t.get('gust_max_kmh') or 0:.0f} km/h.") + sky
+    elif w and re.search(r"cloud|stars|stargaz", low):
+        c = w.get("clouds") or {}
+        text = (f"Right now clouds cover {c.get('total') or 0:.0f}% of the sky: {c.get('low') or 0:.0f}% low, {c.get('mid') or 0:.0f}% middle, "
+                f"{c.get('high') or 0:.0f}% high.")
+        if "star" in low:
+            text += " Good for stargazing tonight." if (c.get("total") or 100) < 25 else " Not a great night for the stars."
+            m = moon()
+            text += f" The moon is {m['phase']}, {m['lit']}% lit."
+    elif w and re.search(r"muggy|dew|sticky|humid", low):
+        text = (f"The dew point is {w.get('dew_point'):.0f}°, so the air feels {w.get('feel_of_air')}"
+                f" ({w.get('hum'):.0f}% humidity)." if w.get("dew_point") is not None else says())
+    elif w and re.search(r"fog|visib", low):
+        text = f"You can see about {w.get('visibility_km')} km." + (" It's foggy." if w.get("fog") else "")
+    elif w and re.search(r"thunder|lightning|storm", low):
+        text = (f"Storm potential is {w.get('storm_potential')} (CAPE {w.get('cape') or 0:.0f} J/kg, lifted index "
+                f"{w.get('lifted_index') if w.get('lifted_index') is not None else '?'}), and the pressure is {w.get('pressure_trend')}.")
+        if (w.get("soon") or {}).get("storm_at"):
+            text += f" A storm is forecast around {w['soon']['storm_at']}."
+    elif w and re.search(r"soil|garden|plants|water the|evapo", low):
+        g = w.get("ground") or {}
+        text = (f"The soil is {g.get('soil_temp_surface') or 0:.0f}° on top and {g.get('soil_temp_6cm') or 0:.0f}° 6 cm down. "
+                f"Moisture {(g.get('soil_moisture_top') or 0) * 100:.0f}% at the surface, and plants will lose about "
+                f"{g.get('et0_today_mm') or 0:.1f} mm of water today.")
+        if (g.get("soil_moisture_top") or 1) < 0.15:
+            text += " The ground's dry: water them."
+    elif w and re.search(r"daylight|days? (are |is )?(getting )?(longer|shorter)", low):
+        sun = w.get("sun") or {}
+        ch = sun.get("daylight_change_min")
+        text = f"{sun.get('daylight_h') or 0:.1f} hours of daylight today" + (
+            f", {abs(ch):.1f} minutes {'longer' if ch > 0 else 'shorter'} than yesterday." if ch else ".")
+        if ch:
+            text += " The days are getting longer." if ch > 0 else " The days are getting shorter."
+    elif w and re.search(r"\buv\b|sunscreen|sunburn|sunshine", low):
+        sun = w.get("sun") or {}
+        text = (f"UV is {sun.get('uv') or 0:.0f} now, up to {w.get('uv') or 0:.0f} today. {sun.get('sunshine_h_today') or 0:.0f} hours "
+                f"of sunshine today and {sun.get('daylight_h') or 0:.1f} hours of daylight")
+        ch = sun.get("daylight_change_min")
+        text += (f", {abs(ch):.1f} minutes {'longer' if ch > 0 else 'shorter'} than yesterday." if ch else ".")
+        if (sun.get("uv") or 0) >= 6:
+            text += " Wear sunscreen."
+    elif w and re.search(r"snow|freez|frost", low):
+        pr = w.get("precip") or {}
+        snowing = (pr.get("snow_depth_m") or 0) > 0 or ((w.get("today_summary") or {}).get("snowfall_cm") or 0) > 0
+        if not snowing and (w.get("temp") or 0) > 3:
+            text = f"No snow: it's {fmt(w.get('temp'))}, and it only freezes {w.get('freezing_level_m') or 0:.0f} m up."
+        else:
+            text = (f"The freezing level is {w.get('freezing_level_m') or 0:.0f} m up. Snow depth {pr.get('snow_depth_m') or 0:.2f} m, "
+                    f"snowfall today {((w.get('today_summary') or {}).get('snowfall_cm') or 0):.1f} cm.")
     elif "story" in low:
         text = weather_story_now()
     else:

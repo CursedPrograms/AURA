@@ -45,10 +45,19 @@ The fleet's weather station. AURA knows what it's like outside, what it's like i
 - **Her own sensor:** an AHT10 temperature and humidity sensor on an Arduino over USB (`scripts/aura_sensor`), the same sensor and code as MILA's.
 - **The fleet:** every robot that already reports temperature and humidity: MILA (`/status`), NORA (`/sensors`), and anything else with `temp` / `hum` in its status. She finds them in RIFT's fleet list and asks them every minute, over WiFi, or over Bluetooth for a robot you list in `Bluetooth`. A robot can also push its reading: `POST /report`.
 - **The graph:** inside against outside (outside dashed), temperature or humidity, over 6 hours, 24 hours or 7 days. One reading a minute per source is kept for 7 days in `data/history.csv` and read back when she starts, so the graph carries on from last time (a gap where she was off).
+- **Everything else Open-Meteo knows** (the same free forecast call), in **The details** on her page:
+  - **Barometer:** sea-level and surface pressure, and the trend over 3 hours ("falling fast" is the classic storm sign).
+  - **Wind:** speed, gusts and direction, and today's strongest gust.
+  - **Clouds:** total, and low, middle and high separately. **Visibility** (under 1 km: fog).
+  - **Dew point:** how the air really feels (dry, comfortable, a bit humid, muggy, oppressive).
+  - **Storm energy:** CAPE and the lifted index (an earlier storm hint than the forecast code), and lightning potential where the model has it (Europe).
+  - **Rain and snow in detail:** rain, showers, snowfall, snow depth, today's total and hours of rain, and the freezing level.
+  - **Sun:** sunshine today, daylight and how much longer or shorter it is than yesterday, solar radiation, and UV under a clear sky.
+  - **Ground:** soil temperature (surface and 6 cm) and moisture, evaporation, and how much water plants lose today (ET₀).
 - **What's coming:** the next 6 hours, hour by hour: when rain looks likely (60 % or more, or it's in the forecast) and when a thunderstorm is forecast. **Air:** air quality (US AQI, PM2.5) and pollen from Open-Meteo's free air-quality service, every 30 minutes (pollen is only measured in Europe). DREAM uses all of this to mention the weather now and then, the way a person would.
 - **The sky:** sunrise, sunset and the UV index (Open-Meteo), and the moon's phase, worked out on the PC (no internet needed): how lit it is and the days to the next full moon.
 - **Obsessed with the weather:** she has NINA's storyteller (Karpathy's 15M TinyStories model, NumPy only, no GPU) and every story is about the weather: she opens it with the real sky ("Today there was light rain and it was cold...") and the little model tells the rest. **Tell me a weather story** on her page, or `GET /story`. Ask her anything and she brings it back to the weather.
-- **Ask her:** `GET /ask?q=...`: the weather, a robot's readings ("how warm is it at MILA?"), the moon, sunrise and sunset, or a story. DREAM asks her this way.
+- **Ask her:** `GET /ask?q=...`: the weather, a robot's readings ("how warm is it at MILA?"), the moon, sunrise and sunset, the barometer, wind, clouds and stargazing, mugginess, fog, thunderstorms, the garden ("should I water the plants?"), sunscreen, whether the days are getting longer, snow, or a story. DREAM asks her this way.
 - **Brainfuck, like the fleet:** she registers `talk:5017`, so RIFT's conversations include her (`/chirp?u=`, beeped on the PC speaker in her light voice). When DREAM asks for the weather, DREAM beeps "wx?" (utterance 17) first and AURA beeps the sky back in one word: sun, cloud, rain, fog, snow, storm, hot or cold (18-25, RIFT's `Fleet/talk_bf.json`). Then DREAM says AURA's answer in words.
 - **In her own words:** "It's 27° and mostly clear outside, a 69% chance of rain today, so take an umbrella, 22° in here, MILA has the warmest spot at 25°."
 

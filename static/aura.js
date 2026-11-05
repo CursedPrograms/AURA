@@ -45,6 +45,7 @@ async function refreshNow() {
     const soon = o.soon || {};
     $('out-soon').textContent = soon.storm_at ? `storm ~${soon.storm_at}` : soon.rain_at ? `rain ~${soon.rain_at}` : 'dry for now';
   }
+  if (o) showDetails(o);
   if (d.air && d.air.aqi !== null) {
     $('out-air').textContent = `${d.air.words} (${Math.round(d.air.aqi)})` + ((d.air.pollen_high || []).length ? `, ${d.air.pollen_high.join(' + ')} pollen` : '');
   }
@@ -70,6 +71,35 @@ async function refreshNow() {
     }));
   }
   $('problems').replaceChildren(...(d.problems || []).map(p => Object.assign(document.createElement('li'), { textContent: p })));
+}
+
+// Everything else Open-Meteo says: the barometer, wind, clouds, air, storm energy, sun and ground.
+function showDetails(o) {
+  const num = (v, d = 0) => (v === null || v === undefined ? '--' : Number(v).toFixed(d));
+  const c = o.clouds || {}, sun = o.sun || {}, g = o.ground || {}, t = o.today_summary || {}, p = o.precip || {};
+  const rows = [
+    ['Pressure', `${num(o.pressure_hpa)} hPa`, o.pressure_trend ? `${o.pressure_trend} (${num(o.pressure_change_3h, 1)} in 3 h)` : ''],
+    ['Wind', `${num(o.wind_kmh)} km/h ${o.wind_dir || ''}`, `gusts ${num(o.gusts_kmh)} · today max ${num(t.gust_max_kmh)}`],
+    ['Clouds', `${num(c.total)}%`, `low ${num(c.low)} · mid ${num(c.mid)} · high ${num(c.high)}`],
+    ['Visibility', `${num(o.visibility_km, 1)} km`, o.fog ? 'fog' : ''],
+    ['Dew point', `${deg(o.dew_point)}${unit()}`, o.feel_of_air || ''],
+    ['Storm energy', o.storm_potential || '--', `CAPE ${num(o.cape)} · lifted ${num(o.lifted_index, 1)}${o.lightning !== null && o.lightning !== undefined ? ` · lightning ${num(o.lightning)}` : ''}`],
+    ['Rain today', `${num(t.precip_mm, 1)} mm`, `${num(t.precip_hours)} h · now ${num(p.rain_mm, 1)} rain, ${num(p.showers_mm, 1)} showers`],
+    ['Snow', `${num(p.snowfall_cm, 1)} cm`, `depth ${num(p.snow_depth_m, 2)} m · freezes at ${num(o.freezing_level_m)} m`],
+    ['Sunshine', `${num(sun.sunshine_h_today, 1)} h today`, `UV clear sky ${num(sun.uv_clear_sky, 1)}`],
+    ['Daylight', `${num(sun.daylight_h, 2)} h`, sun.daylight_change_min ? `${sun.daylight_change_min > 0 ? '+' : ''}${num(sun.daylight_change_min, 1)} min since yesterday` : ''],
+    ['Sun power', `${num(sun.radiation_wm2)} W/m²`, `direct ${num(sun.direct_wm2)} · diffuse ${num(sun.diffuse_wm2)} · ${num(sun.radiation_today_mj, 1)} MJ today`],
+    ['Ground', `${deg(g.soil_temp_surface)}${unit()}`, `6 cm ${deg(g.soil_temp_6cm)}° · moisture ${num((g.soil_moisture_top || 0) * 100)}%`],
+    ['Plants drink', `${num(g.et0_today_mm, 1)} mm today`, `now ${num(g.evapotranspiration_mm, 2)} mm/h`],
+  ];
+  $('details').replaceChildren(...rows.map(([k, v, note]) => {
+    const div = document.createElement('div');
+    div.innerHTML = '<dt></dt><dd></dd><dd class="note"></dd>';
+    div.querySelector('dt').textContent = k;
+    div.querySelectorAll('dd')[0].textContent = v;
+    div.querySelectorAll('dd')[1].textContent = note;
+    return div;
+  }));
 }
 
 async function refreshHistory() {

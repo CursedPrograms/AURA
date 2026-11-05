@@ -149,3 +149,49 @@ def test_says_mentions_whats_coming(monkeypatch):
     w = {"temp": 22.0, "words": "partly cloudy", "rain_chance": 30, "soon": {"rain_at": "16:00", "storm_at": None}}
     line = aura.says({}, w)
     assert "rain around 16:00" in line and "the air is unhealthy today" in line
+
+
+def test_reading_the_numbers():
+    assert aura.pressure_trend(-3.4) == "falling fast" and aura.pressure_trend(0.3) == "steady"
+    assert aura.pressure_trend(1.2) == "rising" and aura.pressure_trend(None) is None
+    assert aura.muggy(13.3) == "comfortable" and aura.muggy(19) == "muggy" and aura.muggy(23) == "oppressive"
+    assert aura.storm_potential(1890, -3) == "high" and aura.storm_potential(600, 1) == "some"
+    assert aura.storm_potential(100, 2) == "low"
+    assert aura.compass(336) == "NW" and aura.compass(0) == "N" and aura.compass(170) == "S"
+
+
+def test_fetch_weather_everything():
+    times = [f"2026-11-05T{h:02d}:00" for h in range(10, 20)]
+    meteo = {
+        "current": {"temperature_2m": 27.8, "relative_humidity_2m": 41, "weather_code": 1, "wind_speed_10m": 17,
+                    "wind_direction_10m": 336, "wind_gusts_10m": 45, "pressure_msl": 1014, "cloud_cover": 34,
+                    "dew_point_2m": 13.3, "visibility": 17480, "cape": 1890, "lifted_index": -3,
+                    "soil_temperature_0cm": 35.8, "soil_moisture_0_to_1cm": 0.1, "is_day": 1},
+        "hourly": {"time": times, "pressure_msl": [1017.4, 1016.4, 1015.2, 1014.0, 1012.5, 1011.6, 1011.8, 1012.1, 1013.4, 1013.9],
+                   "precipitation_probability": [0, 0, 0, 10, 30, 70, 40, 10, 0, 0], "weather_code": [1] * 10,
+                   "wind_gusts_10m": [30, 30, 30, 40, 45, 55, 40, 30, 20, 20]},
+        "daily": {"time": ["2026-11-04", "2026-11-05"], "daylight_duration": [47409.67, 47489.56],
+                  "temperature_2m_max": [26, 28.1], "sunset": ["2026-11-04T18:26", "2026-11-05T18:27"],
+                  "et0_fao_evapotranspiration": [5.9, 6.06]},
+    }
+    w = aura.fetch_weather({"lat": 1, "lon": 2}, get=lambda url, **kw: Resp(meteo))
+    assert w["pressure_change_3h"] == -3.4 and w["pressure_trend"] == "falling fast"
+    assert w["high"] == 28.1 and w["sunset"] == "2026-11-05T18:27"           # today, not yesterday
+    assert w["sun"]["daylight_change_min"] == 1.3 and w["wind_dir"] == "NW"
+    assert w["storm_potential"] == "high" and w["feel_of_air"] == "comfortable" and not w["fog"]
+    assert w["soon"]["rain_at"] == "15:00" and w["soon"]["gusty_at"] == "15:00"
+    assert w["ground"]["et0_today_mm"] == 6.06
+    line = aura.says({}, w)
+    assert "pressure's dropping fast" in line
+
+
+def test_answers_about_the_details(monkeypatch):
+    w = {"temp": 28.0, "words": "mostly clear", "pressure_hpa": 1014, "pressure_change_3h": -3.4, "pressure_trend": "falling fast",
+         "sun": {"daylight_h": 13.19, "daylight_change_min": 1.3, "uv": 9.4, "sunshine_h_today": 12},
+         "freezing_level_m": 4960, "precip": {}, "today_summary": {}, "uv": 10}
+    monkeypatch.setitem(aura.STATE, "weather", w)
+    monkeypatch.setattr(aura, "snapshot", lambda max_age_s=600: {})
+    assert "storm's on its way" in aura.answer("what's the barometer doing")["answer"]
+    assert "The days are getting longer" in aura.answer("are the days getting longer?")["answer"]
+    assert aura.answer("will it snow")["answer"].startswith("No snow")
+    assert "Wear sunscreen" in aura.answer("do I need sunscreen")["answer"]

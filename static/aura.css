@@ -36,6 +36,12 @@ h2 { font: 600 13px var(--mono); letter-spacing: 2px; text-transform: uppercase;
 .facts dt { color: var(--sub); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
 .facts dd { margin: 0; font-family: var(--mono); }
 
+.details { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 0; }
+.details div { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.details dt { color: var(--sub); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.details dd { margin: 2px 0 0; font-family: var(--mono); font-size: 15px; }
+.details .note { color: var(--sun); font-family: var(--sans); font-size: 12px; }
+
 .sky { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 12px; margin-top: 12px; }
 .moon, .story { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
 .moon { display: flex; align-items: center; gap: 14px; }
@@ -65,7 +71,7 @@ h2 { font: 600 13px var(--mono); letter-spacing: 2px; text-transform: uppercase;
   padding: 6px 12px; font: 13px var(--sans); cursor: pointer;
 }
 .toggles button.on { color: var(--sky); border-color: var(--sky); }
-canvas { width: 100%; margin-top: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+canvas { width: 100%; height: 320px; margin-top: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 14px; }
 .legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; background: var(--c); }
 .legend span.dash::before { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 7px); }
