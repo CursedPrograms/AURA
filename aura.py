@@ -27,6 +27,8 @@ from fleet_ladder import FleetLadder
 
 NAME = "AURA"
 HERE = os.path.dirname(os.path.abspath(__file__))
+import talk_switch   # noqa: E402  her Brainfuck talking switch, kept next to her
+TALK = talk_switch.TalkSwitch(os.path.join(HERE, "talk_mute.json"))
 DATA = os.path.join(HERE, "data")
 HISTORY_CSV = os.path.join(DATA, "history.csv")
 SAVED_LOCATION = os.path.join(HERE, "location.json")   # only once a city is saved on her page (gitignored)
@@ -1100,7 +1102,10 @@ def weather_word(w):
 
 
 def chirp(u):
-    """Beeps utterance u's Brainfuck program, one tone per symbol, in her own pitch (Windows)."""
+    """Beeps utterance u's Brainfuck program, one tone per symbol, in her own pitch (Windows).
+    Nothing while her Brainfuck talking is muted (/talkmute)."""
+    if TALK.muted:
+        return False
     entry = phrasebook().get(u)
     if not entry or os.name != "nt":
         return False
@@ -1236,6 +1241,7 @@ def weather_story_now(seed=None):
 
 # ── Her web API and page ───────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
+TALK.register(app)   # /talkmute: her Brainfuck talking muted or not (RIFT's Fleet/talk_mute.py)
 
 
 @app.route("/")
@@ -1384,7 +1390,8 @@ def status():
     return jsonify({"name": NAME, "mode": "weather", "temp": mine.get("temp"), "hum": mine.get("hum"),
                     "outside_temp": w.get("temp"), "outside_hum": w.get("hum"), "weather": w.get("words"),
                     "board": STATE["board"], "registered": STATE["registered"],
-                    "moon": moon()["phase"], "uptime_s": round(time.time() - STARTED), "says": says()})
+                    "moon": moon()["phase"], "uptime_s": round(time.time() - STARTED), "says": says(),
+                    "talk_muted": TALK.muted, "chat_off": TALK.chat_off})
 
 
 @app.route("/ask")
@@ -1392,7 +1399,7 @@ def ask_route():
     """GET /ask?q=what's the weather / how warm is MILA / the moon / tell me a story. DREAM asks her
     this way; with chirp=1 she also beeps her Brainfuck answer (the sky in one word)."""
     a = answer(request.args.get("q", ""))
-    if request.args.get("chirp") == "1" and a["bf"]:
+    if request.args.get("chirp") == "1" and a["bf"] and not TALK.chat_off:   # chat off: words only
         threading.Thread(target=chirp, args=(a["bf"]["u"],), daemon=True).start()
     return jsonify(a)
 
@@ -1416,6 +1423,10 @@ def chirp_route():
         u = -1
     if u not in phrasebook():
         return jsonify({"ok": False, "error": "use /chirp?u= an utterance from RIFT's talk_bf.json"}), 400
+    if TALK.chat_off:       # her chat switch is off: RIFT leaves her out
+        return TALK.refuse()
+    if TALK.muted:          # her sound switch is off: said, not beeped
+        return TALK.silent()
     threading.Thread(target=chirp, args=(u,), daemon=True).start()
     return jsonify({"ok": True})
 

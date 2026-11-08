@@ -266,6 +266,26 @@ $('story-btn').addEventListener('click', async () => {
 });
 
 colour('AURA');
+// Her two talk switches (/talkmute; RIFT has the same): her beeps when she chats, and the chatting itself
+const talkBtn = document.getElementById('talk-btn'), chatBtn = document.getElementById('chat-btn');
+function showTalk(d) {
+  if (d.talk_muted === undefined) return;
+  talkBtn.textContent = d.talk_muted ? 'Chat sound: off' : 'Chat sound: on';
+  talkBtn.classList.toggle('muted', d.talk_muted);
+  chatBtn.textContent = d.chat_off ? 'Fleet chat: off' : 'Fleet chat: on';
+  chatBtn.classList.toggle('muted', d.chat_off);
+}
+async function refreshTalk() {
+  try { showTalk(await (await fetch('/talkmute')).json()); } catch {}
+}
+async function flipTalk(which) {
+  try { showTalk(await (await fetch(`/talkmute?${which}=toggle`)).json()); } catch {}
+}
+talkBtn.addEventListener('click', () => flipTalk('on'));
+chatBtn.addEventListener('click', () => flipTalk('chat_off'));
+refreshTalk();
+setInterval(refreshTalk, 15000);
+
 loadCities();
 refreshNow();
 refreshHistory();

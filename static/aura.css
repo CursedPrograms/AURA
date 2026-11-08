@@ -105,3 +105,8 @@ canvas { width: 100%; height: 320px; margin-top: 12px; background: var(--panel);
   .outside { grid-template-columns: 1fr; }
   .outside .big { grid-row: auto; font-size: 60px; }
 }
+
+/* her fleet talk switch (/talkmute) */
+.talk-sw { margin-left: 12px; padding: 4px 10px; background: transparent; color: inherit; border: 1px solid currentColor;
+            border-radius: 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+.talk-sw.muted { opacity: 0.5; text-decoration: line-through; }
